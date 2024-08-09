@@ -107,10 +107,10 @@ func ParseDoc(doc []string, name string) []*Attribute {
 	return docs
 }
 
-func GetFieldAttributeAsParamType(f *astp.ParamField) []*Attribute {
+func GetFieldAttributeAsParamType(f *astp.Element) []*Attribute {
 	results := make([]*Attribute, 0)
-	if f.Type != nil {
-		attrs := GetStructAttrs(f.Type)
+	if f.Item != nil {
+		attrs := GetStructAttrs(f.Item)
 		for _, attr := range attrs {
 			if attr.Type == TypeParam {
 				results = append(results, attr)
@@ -127,9 +127,9 @@ func GetFieldAttributeAsParamType(f *astp.ParamField) []*Attribute {
 	return results
 }
 
-var cmdStructCaches = make(map[*astp.Struct][]*Attribute)
+var cmdStructCaches = make(map[*astp.Element][]*Attribute)
 
-func GetStructAttrs(s *astp.Struct) []*Attribute {
+func GetStructAttrs(s *astp.Element) []*Attribute {
 	if cmdCache, ok := cmdStructCaches[s]; ok {
 		return cmdCache
 	}
@@ -138,7 +138,10 @@ func GetStructAttrs(s *astp.Struct) []*Attribute {
 	return cmdCache
 }
 
-func HasAttribute(s *astp.Struct, name string) bool {
+func HasAttribute(s *astp.Element, name string) bool {
+	if s == nil {
+		return false
+	}
 	if cmdCache, ok := cmdStructCaches[s]; ok {
 		for _, cmd := range cmdCache {
 			if cmd.Name == name {
@@ -154,7 +157,7 @@ func HasAttribute(s *astp.Struct, name string) bool {
 	}
 	return false
 }
-func GetStructAttrByName(s *astp.Struct, name string) *Attribute {
+func GetStructAttrByName(s *astp.Element, name string) *Attribute {
 	if cmdCache, ok := cmdStructCaches[s]; ok {
 		for _, cmd := range cmdCache {
 			if cmd.Name == name {
@@ -171,7 +174,7 @@ func GetStructAttrByName(s *astp.Struct, name string) *Attribute {
 	return nil
 }
 
-func GetStructAttrAsMiddleware(s *astp.Struct) []*Attribute {
+func GetStructAttrAsMiddleware(s *astp.Element) []*Attribute {
 	results := make([]*Attribute, 0)
 	attrs := GetStructAttrs(s)
 	for _, attr := range attrs {
@@ -182,9 +185,9 @@ func GetStructAttrAsMiddleware(s *astp.Struct) []*Attribute {
 	return results
 }
 
-var attrMethodCaches = make(map[*astp.Method][]*Attribute)
+var attrMethodCaches = make(map[*astp.Element][]*Attribute)
 
-func GetMethodAttributes(m *astp.Method) []*Attribute {
+func GetMethodAttributes(m *astp.Element) []*Attribute {
 	if cmdCache, ok := attrMethodCaches[m]; ok {
 		return cmdCache
 	}
@@ -193,7 +196,7 @@ func GetMethodAttributes(m *astp.Method) []*Attribute {
 	return cmdCache
 }
 
-func GetMethodAttributesAsMiddleware(m *astp.Method) []*Attribute {
+func GetMethodAttributesAsMiddleware(m *astp.Element) []*Attribute {
 	results := make([]*Attribute, 0)
 	attrs := GetMethodAttributes(m)
 	for _, attr := range attrs {
@@ -202,4 +205,9 @@ func GetMethodAttributesAsMiddleware(m *astp.Method) []*Attribute {
 		}
 	}
 	return results
+}
+
+func GetLastAttr(f *astp.Element) *Attribute {
+	as := GetFieldAttributeAsParamType(f)
+	return as[len(as)-1]
 }
