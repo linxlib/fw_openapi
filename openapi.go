@@ -388,7 +388,7 @@ func (oa *OpenAPI) HandleServerInfo(si []string) {
 	attrs := attribute.ParseDoc(si, "xxx")
 	for _, attr := range attrs {
 		if attr.Type == attribute.TypeDoc {
-			switch attr.Name {
+			switch strings.ToLower(attr.Name) {
 			case "title":
 				oa.Spec.Info.Spec.Title = attr.Value
 			case "license":
