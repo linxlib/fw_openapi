@@ -20,10 +20,10 @@ var innerAttrNames = map[string]AttributeType{
 	"Controller": TypeTagger,
 	"Ctl":        TypeTagger,
 	"Base":       TypeTagger,
+	"Ignore":     TypeTagger,
 
 	"Tag":        TypeDoc,
 	"Deprecated": TypeDoc,
-	"Ignore":     TypeDoc,
 
 	"Body":           TypeParam,
 	"Json":           TypeParam,

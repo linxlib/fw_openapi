@@ -16,9 +16,6 @@ var FS embed.FS
 //go:embed rapi/*
 var RAPIFS embed.FS
 
-//go:embed openapi-ui/*
-var OpenAPIFS embed.FS
-
 func NewOpenApiMiddleware() *OpenApiMiddleware {
 	return &OpenApiMiddleware{
 		MiddlewareGlobal: fw.NewMiddlewareGlobal("OpenApiMiddleware"),
@@ -50,10 +47,10 @@ func joinRoute(base string, r string) string {
 }
 
 type OpenApiOptions struct {
-	Redirect bool   `yaml:"redirect" default:"true"`         //if redirect /doc to /doc/index.html
-	Route    string `yaml:"route" default:"doc"`             // the page route of openapi document. e.g. if your want to serve document at /docA/index.html, just set route to docA
+	Redirect bool `yaml:"redirect" default:"true"` //if redirect /doc to /doc/index.html
+	//Route    string `yaml:"route" default:"doc"`             // the page route of openapi document. e.g. if your want to serve document at /docA/index.html, just set route to docA
 	FileName string `yaml:"fileName" default:"openapi.yaml"` //file path refer to openapi.yaml or openapi.json
-	Type     string `yaml:"type" default:"swagger"`          //ui type. swagger\rapi-doc\openapi-ui
+	Type     string `yaml:"type" default:"swagger"`          //ui type. swagger\rapi
 }
 
 type OpenApiMiddleware struct {
@@ -62,7 +59,7 @@ type OpenApiMiddleware struct {
 }
 
 func (o *OpenApiMiddleware) Constructor(server inject.Provider) {
-	var Conf *config.Config
+	var Conf = new(config.Config)
 	_ = server.Provide(Conf)
 	_ = Conf.LoadWithKey("openapi", o.options)
 }
@@ -82,7 +79,7 @@ func (o *OpenApiMiddleware) CloneAsCtl() fw.IMiddlewareCtl {
 }
 
 func (o *OpenApiMiddleware) HandlerController(base string) []*fw.RouteItem {
-	baseDocRoute := joinRoute(base, o.options.Route)
+	baseDocRoute := joinRoute(base, "doc")
 	ris := make([]*fw.RouteItem, 0)
 	if o.options.Redirect {
 		ris = append(ris, &fw.RouteItem{
@@ -103,17 +100,12 @@ func (o *OpenApiMiddleware) HandlerController(base string) []*fw.RouteItem {
 	case "swagger":
 		ri.H = func(context *fw.Context) {
 			path := context.GetFastContext().UserValue("any").(string)
-			fasthttp.ServeFS(context.GetFastContext(), FS, "/"+o.options.Route+"/"+path)
+			fasthttp.ServeFS(context.GetFastContext(), FS, "/swagger/"+path)
 		}
 	case "rapi":
 		ri.H = func(context *fw.Context) {
 			path := context.GetFastContext().UserValue("any").(string)
-			fasthttp.ServeFS(context.GetFastContext(), RAPIFS, "/"+o.options.Route+"/"+path)
-		}
-	case "openapi-ui":
-		ri.H = func(context *fw.Context) {
-			path := context.GetFastContext().UserValue("any").(string)
-			fasthttp.ServeFS(context.GetFastContext(), OpenAPIFS, "/"+o.options.Route+"/"+path)
+			fasthttp.ServeFS(context.GetFastContext(), RAPIFS, "/rapi/"+path)
 		}
 	default:
 		ri.H = func(context *fw.Context) {
@@ -127,6 +119,7 @@ func (o *OpenApiMiddleware) HandlerController(base string) []*fw.RouteItem {
 		H: func(context *fw.Context) {
 			context.File(o.options.FileName)
 		},
+		Middleware: o,
 	})
 	return ris
 }

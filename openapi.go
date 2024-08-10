@@ -4,6 +4,7 @@ import (
 	"github.com/linxlib/astp"
 	"github.com/linxlib/fw"
 	"github.com/linxlib/fw_openapi/attribute"
+	"github.com/linxlib/fw_openapi/middleware"
 	"github.com/pterm/pterm"
 	"github.com/sv-tools/openapi/spec"
 	"gopkg.in/yaml.v3"
@@ -44,6 +45,8 @@ func NewOpenAPIFromFWServer(s *fw.Server, fileName string) *OpenAPI {
 	s.RegisterHooks(oa)
 	oa.so = new(fw.ServerOption)
 	oa.s.Provide(oa.so)
+	s.Use(middleware.NewOpenApiMiddleware())
+
 	return oa
 }
 
@@ -117,7 +120,10 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 				route = joinRoute(route, a.Value)
 			}
 			if a.Type == attribute.TypeDoc {
-				desc = a.Value
+				if a.Value != "" {
+					desc = a.Value
+				}
+
 			}
 		}
 		if m == "" {
