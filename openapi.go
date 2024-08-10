@@ -3,7 +3,6 @@ package fw_openapi
 import (
 	"github.com/linxlib/astp"
 	"github.com/linxlib/fw"
-	"github.com/linxlib/fw/options"
 	"github.com/linxlib/fw_openapi/attribute"
 	"github.com/pterm/pterm"
 	"github.com/sv-tools/openapi/spec"
@@ -43,7 +42,7 @@ func NewOpenAPIFromFWServer(s *fw.Server, fileName string) *OpenAPI {
 	oa.Spec.Components = spec.NewComponents()
 	oa.Spec.Components.Spec.Schemas = make(map[string]*spec.RefOrSpec[spec.Schema])
 	s.RegisterHooks(oa)
-	oa.so = new(options.ServerOption)
+	oa.so = new(fw.ServerOption)
 	oa.s.Provide(oa.so)
 	return oa
 }
@@ -52,7 +51,7 @@ type OpenAPI struct {
 	*spec.Extendable[spec.OpenAPI]
 	s        *fw.Server
 	fileName string
-	so       *options.ServerOption
+	so       *fw.ServerOption
 }
 
 func joinRoute(base string, r string) string {
@@ -372,7 +371,7 @@ func (oa *OpenAPI) Print(slot string) {
 	switch slot {
 	case fw.AfterListen:
 		oa.WriteOut(oa.fileName)
-		var so = new(options.ServerOption)
+		var so = new(fw.ServerOption)
 		oa.s.Provide(so)
 		style := pterm.NewStyle(pterm.FgLightGreen, pterm.Bold)
 		style3 := pterm.NewStyle(pterm.FgLightWhite, pterm.Bold)
