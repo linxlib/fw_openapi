@@ -7,7 +7,7 @@ window.onload = function () {
   console.log(href)
   // the following lines will be replaced by docker/configurator, when it runs in a docker-container
   window.ui = SwaggerUIBundle({
-    urls: [{ url: "openapi.yaml", name: "api" }],
+    urls: [{ url: "openapi.yaml", name: "fwapi" }],
     dom_id: '#swagger-ui',
     docExpansion: false,
     defaultModelsExpandDepth: -1,

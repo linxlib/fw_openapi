@@ -3,14 +3,21 @@ package middleware
 import (
 	"github.com/linxlib/config"
 	"github.com/linxlib/fw"
+	"github.com/linxlib/inject"
 	"github.com/valyala/fasthttp"
 	"strings"
 )
 
 import "embed"
 
-//go:embed doc/*
+//go:embed swagger/*
 var FS embed.FS
+
+//go:embed rapi/*
+var RAPIFS embed.FS
+
+//go:embed openapi-ui/*
+var OpenAPIFS embed.FS
 
 func NewOpenApiMiddleware() *OpenApiMiddleware {
 	return &OpenApiMiddleware{
@@ -43,19 +50,21 @@ func joinRoute(base string, r string) string {
 }
 
 type OpenApiOptions struct {
-	Redirect bool   `yaml:"redirect" default:"true"`
+	Redirect bool   `yaml:"redirect" default:"true"`         //if redirect /doc to /doc/index.html
 	Route    string `yaml:"route" default:"doc"`             // the page route of openapi document. e.g. if your want to serve document at /docA/index.html, just set route to docA
 	FileName string `yaml:"fileName" default:"openapi.yaml"` //file path refer to openapi.yaml or openapi.json
+	Type     string `yaml:"type" default:"swagger"`          //ui type. swagger\rapi-doc\openapi-ui
 }
 
 type OpenApiMiddleware struct {
 	*fw.MiddlewareGlobal
-	Conf    *config.Config `inject:""`
 	options *OpenApiOptions
 }
 
-func (o *OpenApiMiddleware) Constructor() {
-	_ = o.Conf.LoadWithKey("openapi", o.options)
+func (o *OpenApiMiddleware) Constructor(server inject.Provider) {
+	var Conf *config.Config
+	_ = server.Provide(Conf)
+	_ = Conf.LoadWithKey("openapi", o.options)
 }
 
 func (o *OpenApiMiddleware) CloneAsMethod() fw.IMiddlewareMethod {
@@ -68,41 +77,56 @@ func (o *OpenApiMiddleware) HandlerMethod(next fw.HandlerFunc) fw.HandlerFunc {
 
 func (o *OpenApiMiddleware) CloneAsCtl() fw.IMiddlewareCtl {
 	ctl := NewOpenApiMiddleware()
-	ctl.Conf = o.Conf
 	ctl.options = o.options
 	return ctl
 }
 
 func (o *OpenApiMiddleware) HandlerController(base string) []*fw.RouteItem {
-	return []*fw.RouteItem{
-		//跳转
-		{
+	baseDocRoute := joinRoute(base, o.options.Route)
+	ris := make([]*fw.RouteItem, 0)
+	if o.options.Redirect {
+		ris = append(ris, &fw.RouteItem{
 			Method: "GET",
-			Path:   joinRoute(base, o.options.Route) + "/",
+			Path:   baseDocRoute + "/",
 			H: func(context *fw.Context) {
 				context.Redirect(302, "index.html")
 			},
 			Middleware: o,
-		},
-		// 文档的相关文件
-		{
-			Method: "GET",
-			Path:   joinRoute(base, o.options.Route) + "/{any:*}",
-			H: func(context *fw.Context) {
-				path := context.GetFastContext().UserValue("any").(string)
-				fasthttp.ServeFS(context.GetFastContext(), FS, "/"+o.options.Route+"/"+path)
-			},
-			Middleware: o,
-		},
-		// 生成的json或yaml文件
-		{
-			//TODO: 这里需要判断一下
-			Method: "GET",
-			Path:   joinRoute(base, o.options.Route) + "/openapi.yaml",
-			H: func(context *fw.Context) {
-				context.File(o.options.FileName)
-			},
-			Middleware: o,
-		},
+		})
 	}
+	ri := &fw.RouteItem{
+		Method:     "GET",
+		Path:       baseDocRoute + "/{any:*}",
+		Middleware: o,
+	}
+	switch o.options.Type {
+	case "swagger":
+		ri.H = func(context *fw.Context) {
+			path := context.GetFastContext().UserValue("any").(string)
+			fasthttp.ServeFS(context.GetFastContext(), FS, "/"+o.options.Route+"/"+path)
+		}
+	case "rapi":
+		ri.H = func(context *fw.Context) {
+			path := context.GetFastContext().UserValue("any").(string)
+			fasthttp.ServeFS(context.GetFastContext(), RAPIFS, "/"+o.options.Route+"/"+path)
+		}
+	case "openapi-ui":
+		ri.H = func(context *fw.Context) {
+			path := context.GetFastContext().UserValue("any").(string)
+			fasthttp.ServeFS(context.GetFastContext(), OpenAPIFS, "/"+o.options.Route+"/"+path)
+		}
+	default:
+		ri.H = func(context *fw.Context) {
+			context.String(404, "Not Found")
+		}
+	}
+	ris = append(ris, ri)
+	ris = append(ris, &fw.RouteItem{
+		Method: "GET",
+		Path:   baseDocRoute + "/openapi.yaml",
+		H: func(context *fw.Context) {
+			context.File(o.options.FileName)
+		},
+	})
+	return ris
 }
