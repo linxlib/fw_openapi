@@ -3,7 +3,7 @@ package fw_openapi
 import (
 	"github.com/linxlib/astp"
 	"github.com/linxlib/fw"
-	"github.com/linxlib/fw_openapi/attribute"
+	"github.com/linxlib/fw/attribute"
 	"github.com/linxlib/fw_openapi/middleware"
 	"github.com/pterm/pterm"
 	"github.com/sv-tools/openapi/spec"
@@ -12,6 +12,24 @@ import (
 	"path/filepath"
 	"strings"
 )
+
+var innerAttrNames = map[string]attribute.AttributeType{
+	"Tag":            attribute.TypeDoc,
+	"Deprecated":     attribute.TypeDoc,
+	"License":        attribute.TypeDoc,
+	"Version":        attribute.TypeDoc,
+	"Title":          attribute.TypeDoc,
+	"Contact":        attribute.TypeDoc,
+	"Description":    attribute.TypeDoc,
+	"Summary":        attribute.TypeDoc,
+	"TermsOfService": attribute.TypeDoc,
+}
+
+func init() {
+	for s, attributeType := range innerAttrNames {
+		attribute.RegAttributeType(s, attributeType)
+	}
+}
 
 //TODO: 1. Responses
 //TODO: 2. 字段上的Doc是否也考虑作为description
@@ -90,11 +108,11 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 		if attr.Type == attribute.TypeDoc {
 			desc = attr.Name
 		}
-		if attr.Name == "Tag" {
+		if attr.Name == "TAG" {
 			tagName = attr.Value
 			desc = attr.Value
 		}
-		if attr.Name == "Route" {
+		if attr.Name == "ROUTE" {
 			r = attr.Value
 		}
 	}
@@ -174,7 +192,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 			oa.handleParam(element)
 			attr := attribute.GetLastAttr(element)
 			switch attr.Name {
-			case "Body", "Json":
+			case "BODY", "JSON":
 				body := spec.NewRequestBodySpec()
 				body.Spec.Spec.Required = true
 				body.Spec.Spec.Content = make(map[string]*spec.Extendable[spec.MediaType])
@@ -185,7 +203,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 
 				op.Spec.RequestBody = body
 
-			case "Path":
+			case "PATH":
 				element.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
 					return !element.Private()
 				}, func(element *astp.Element) {
@@ -208,7 +226,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 
 				})
 
-			case "Query":
+			case "QUERY":
 
 				element.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
 					return !element.Private()
@@ -247,7 +265,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 					op.Spec.Parameters = append(op.Spec.Parameters, param)
 
 				})
-			case "Multipart":
+			case "MULTIPART":
 				body := spec.NewRequestBodySpec()
 				body.Spec.Spec.Required = true
 				body.Spec.Spec.Content = make(map[string]*spec.Extendable[spec.MediaType])
@@ -284,9 +302,9 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 					op.Spec.RequestBody = body
 
 				})
-			case "Form":
+			case "FORM":
 				//TODO
-			case "Header":
+			case "HEADER":
 				element.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
 					return !element.Private()
 				}, func(element *astp.Element) {
@@ -310,7 +328,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 				})
 			case "XML":
 				//TODO
-			case "Plain":
+			case "PLAIN":
 			}
 		})
 
@@ -346,7 +364,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 func (oa *OpenAPI) handleParam(pf *astp.Element) {
 
 	attr := attribute.GetLastAttr(pf)
-	if attr.Name == "Body" || attr.Name == "Json" {
+	if attr.Name == "BODY" || attr.Name == "JSON" {
 		name := pf.Item.TypeString
 		sch := spec.NewSchemaSpec()
 		v1 := spec.NewSingleOrArray[string]("object")
