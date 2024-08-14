@@ -1,9 +1,7 @@
 package middleware
 
 import (
-	"github.com/linxlib/config"
 	"github.com/linxlib/fw"
-	"github.com/linxlib/inject"
 	"github.com/valyala/fasthttp"
 	"strings"
 )
@@ -58,33 +56,16 @@ type OpenApiMiddleware struct {
 	options *OpenApiOptions
 }
 
-func (o *OpenApiMiddleware) Constructor(server inject.Provider) {
-	var Conf = new(config.Config)
-	_ = server.Provide(Conf)
-	_ = Conf.LoadWithKey("openapi", o.options)
+func (o *OpenApiMiddleware) DoInitOnce() {
+	o.LoadConfig("openapi", o.options)
 }
 
-func (o *OpenApiMiddleware) CloneAsMethod() fw.IMiddlewareMethod {
-	return o.CloneAsCtl()
-}
-
-func (o *OpenApiMiddleware) HandlerMethod(next fw.HandlerFunc) fw.HandlerFunc {
-	return next
-}
-
-func (o *OpenApiMiddleware) CloneAsCtl() fw.IMiddlewareCtl {
-	ctl := NewOpenApiMiddleware()
-	ctl.options = o.options
-	return ctl
-}
-
-func (o *OpenApiMiddleware) HandlerController(base string) []*fw.RouteItem {
-	baseDocRoute := joinRoute(base, "doc")
+func (o *OpenApiMiddleware) Router(ctx *fw.MiddlewareContext) []*fw.RouteItem {
 	ris := make([]*fw.RouteItem, 0)
 	if o.options.Redirect {
 		ris = append(ris, &fw.RouteItem{
 			Method: "GET",
-			Path:   baseDocRoute + "/",
+			Path:   "/doc/",
 			H: func(context *fw.Context) {
 				context.Redirect(302, "index.html")
 			},
@@ -93,7 +74,7 @@ func (o *OpenApiMiddleware) HandlerController(base string) []*fw.RouteItem {
 	}
 	ri := &fw.RouteItem{
 		Method:     "GET",
-		Path:       baseDocRoute + "/{any:*}",
+		Path:       "/doc/{any:*}",
 		Middleware: o,
 	}
 	switch o.options.Type {
@@ -115,7 +96,7 @@ func (o *OpenApiMiddleware) HandlerController(base string) []*fw.RouteItem {
 	ris = append(ris, ri)
 	ris = append(ris, &fw.RouteItem{
 		Method: "GET",
-		Path:   baseDocRoute + "/openapi.yaml",
+		Path:   "/doc/openapi.yaml",
 		H: func(context *fw.Context) {
 			context.File(o.options.FileName)
 		},
