@@ -400,8 +400,8 @@ func (oa *OpenAPI) Print(slot string) {
 		style := pterm.NewStyle(pterm.FgLightGreen, pterm.Bold)
 		style3 := pterm.NewStyle(pterm.FgLightWhite, pterm.Bold)
 		style4 := pterm.NewStyle(pterm.FgWhite)
-		style.Print("➜ ")
-		style3.Printf("%-10s", "ApiDoc: ")
+		style.Print("  ➜ ")
+		style3.Printf("%10s", "ApiDoc: ")
 		style4.Printf("http://%s:%d%s\n", so.IntranetIP, so.Port, so.BasePath+"/doc"+"/index.html")
 
 	}
