@@ -43,7 +43,7 @@ func NewOpenAPIFromFWServer(s *fw.Server, fileName string) *OpenAPI {
 		s:          s,
 		fileName:   fileName,
 	}
-	oa.Spec.OpenAPI = "3.0.3"
+	oa.Spec.OpenAPI = "3.1.0"
 	info := spec.NewInfo()
 	info.Spec.Title = "FW - OpenAPI 3.0"
 	info.Spec.Description = ""
@@ -97,7 +97,36 @@ func joinRoute(base string, r string) string {
 	}
 	return result
 }
-
+func (oa *OpenAPI) checkParam(element *astp.Element) bool {
+	if attribute.HasAttribute(element, "Body") || attribute.HasAttribute(element.Item, "Body") {
+		return true
+	}
+	if attribute.HasAttribute(element, "Query") || attribute.HasAttribute(element.Item, "Query") {
+		return true
+	}
+	if attribute.HasAttribute(element, "Path") || attribute.HasAttribute(element.Item, "Path") {
+		return true
+	}
+	if attribute.HasAttribute(element, "Multipart") || attribute.HasAttribute(element.Item, "Multipart") {
+		return true
+	}
+	if attribute.HasAttribute(element, "Form") || attribute.HasAttribute(element.Item, "Form") {
+		return true
+	}
+	if attribute.HasAttribute(element, "Json") || attribute.HasAttribute(element.Item, "Json") {
+		return true
+	}
+	if attribute.HasAttribute(element, "Header") || attribute.HasAttribute(element.Item, "Header") {
+		return true
+	}
+	if attribute.HasAttribute(element, "XML") || attribute.HasAttribute(element.Item, "XML") {
+		return true
+	}
+	if attribute.HasAttribute(element, "Plain") || attribute.HasAttribute(element.Item, "Plain") {
+		return true
+	}
+	return false
+}
 func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 	//控制器
 	attrs := attribute.ParseDoc(ctl.Docs, ctl.Name)
@@ -158,37 +187,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 		op.Spec.Summary = desc
 		op.Spec.Tags = []string{tagName}
 		//params
-		method.VisitElements(astp.ElementParam, func(element *astp.Element) bool {
-			if attribute.HasAttribute(element, "Body") || attribute.HasAttribute(element.Item, "Body") {
-				return true
-			}
-			if attribute.HasAttribute(element, "Query") || attribute.HasAttribute(element.Item, "Query") {
-				return true
-			}
-			if attribute.HasAttribute(element, "Path") || attribute.HasAttribute(element.Item, "Path") {
-				return true
-			}
-			if attribute.HasAttribute(element, "Multipart") || attribute.HasAttribute(element.Item, "Multipart") {
-				return true
-			}
-			if attribute.HasAttribute(element, "Form") || attribute.HasAttribute(element.Item, "Form") {
-				return true
-			}
-			if attribute.HasAttribute(element, "Json") || attribute.HasAttribute(element.Item, "Json") {
-				return true
-			}
-			if attribute.HasAttribute(element, "Header") || attribute.HasAttribute(element.Item, "Header") {
-				return true
-			}
-			if attribute.HasAttribute(element, "XML") || attribute.HasAttribute(element.Item, "XML") {
-				return true
-			}
-			if attribute.HasAttribute(element, "Plain") || attribute.HasAttribute(element.Item, "Plain") {
-				return true
-			}
-			return false
-
-		}, func(element *astp.Element) {
+		method.VisitElements(astp.ElementParam, oa.checkParam, func(element *astp.Element) {
 			oa.handleParam(element)
 			attr := attribute.GetLastAttr(element)
 			switch attr.Name {
@@ -331,12 +330,39 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 			case "PLAIN":
 			}
 		})
-
 		op.Spec.Responses = spec.NewResponses()
-		resp := spec.NewResponseSpec()
-		resp.Spec.Spec.Description = "success"
 		op.Spec.Responses.Spec.Response = make(map[string]*spec.RefOrSpec[spec.Extendable[spec.Response]])
-		op.Spec.Responses.Spec.Response["200"] = resp
+		method.VisitElements(astp.ElementResult, func(element *astp.Element) bool {
+			return true
+		}, func(element *astp.Element) {
+
+			if element.ElementType != astp.ElementStruct {
+				if element.TypeString == "error" {
+					resp := oa.NewStringResponse("fail", "text/plain")
+					op.Spec.Responses.Spec.Response["500"] = resp
+				} else {
+					resp := oa.NewResponse("success", element.TypeString, "text/plain")
+					op.Spec.Responses.Spec.Response["200"] = resp
+					return
+				}
+
+			}
+			if element.Item == nil {
+				resp := oa.NewResponse("success", element.TypeString, "text/plain")
+				op.Spec.Responses.Spec.Response["200"] = resp
+				return
+			}
+			oa.handleResults(element)
+			//fmt.Println(element.String())
+
+			resp := oa.NewObjectResponse(element.Item.TypeString, "success", "application/json")
+
+			op.Spec.Responses.Spec.Response["200"] = resp
+		})
+		if len(op.Spec.Responses.Spec.Response) == 0 || op.Spec.Responses.Spec.Response["200"] == nil {
+			resp := oa.NewStringResponse("success", "text/plain")
+			op.Spec.Responses.Spec.Response["200"] = resp
+		}
 
 		if p, ok := oa.Spec.Paths.Spec.Paths[route]; ok {
 			path = p
@@ -359,8 +385,62 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 		oa.Spec.Paths.Spec.Paths[route] = path
 
 	})
+}
+func (oa *OpenAPI) NewObjectResponse(schemaName string, desc string, contentType string) *spec.RefOrSpec[spec.Extendable[spec.Response]] {
+	resp := spec.NewResponseSpec()
+	resp.Spec.Spec.Description = desc
+	resp.Spec.Spec.Content = make(map[string]*spec.Extendable[spec.MediaType])
+	md := spec.NewMediaType()
+	sche := spec.NewRefOrSpec[spec.Schema](spec.NewRef("#/components/schemas/"+schemaName), nil)
+	md.Spec.Schema = sche
+	resp.Spec.Spec.Content[contentType] = md
+	return resp
 
 }
+
+func (oa *OpenAPI) NewStringResponse(desc string, contentType string) *spec.RefOrSpec[spec.Extendable[spec.Response]] {
+	resp := spec.NewResponseSpec()
+	resp.Spec.Spec.Description = desc
+	resp.Spec.Spec.Content = make(map[string]*spec.Extendable[spec.MediaType])
+	md := spec.NewMediaType()
+	sch := spec.NewSchemaSpec()
+	v1 := spec.NewSingleOrArray[string]("string")
+	sch.Spec.Type = &v1
+	sch.Spec.Properties = make(map[string]*spec.RefOrSpec[spec.Schema])
+	md.Spec.Schema = sch
+	resp.Spec.Spec.Content[contentType] = md
+	return resp
+}
+func (oa *OpenAPI) NewResponse(desc string, v string, contentType string) *spec.RefOrSpec[spec.Extendable[spec.Response]] {
+	switch v {
+	case "int":
+		v = "integer"
+	case "int64":
+		v = "integer"
+	case "float64":
+		v = "number"
+	case "float32":
+		v = "number"
+	case "error":
+		v = "string"
+	}
+
+	resp := spec.NewResponseSpec()
+	resp.Spec.Spec.Description = desc
+	resp.Spec.Spec.Content = make(map[string]*spec.Extendable[spec.MediaType])
+	md := spec.NewMediaType()
+	sch := spec.NewSchemaSpec()
+	v1 := spec.NewSingleOrArray[string](v)
+	sch.Spec.Type = &v1
+	sch.Spec.Properties = make(map[string]*spec.RefOrSpec[spec.Schema])
+	md.Spec.Schema = sch
+	resp.Spec.Spec.Content[contentType] = md
+	return resp
+}
+func (oa *OpenAPI) AddResponse(op *spec.Extendable[spec.Operation], code string, resp *spec.RefOrSpec[spec.Extendable[spec.Response]]) {
+	op.Spec.Responses.Spec.Response[code] = resp
+}
+
 func (oa *OpenAPI) handleParam(pf *astp.Element) {
 
 	attr := attribute.GetLastAttr(pf)
@@ -373,13 +453,42 @@ func (oa *OpenAPI) handleParam(pf *astp.Element) {
 		pf.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
 			return !element.Private()
 		}, func(field *astp.Element) {
-			prop := spec.NewSchemaSpec()
-			v1 := spec.NewSingleOrArray[string]("string")
-			prop.Spec.Type = &v1
+			prop, tmp := oa.NewProp(field.TypeString)
 			prop.Spec.Format = field.TypeString
 			prop.Spec.Description = field.Comment
+			if tmp {
+				name := field.Name
+				prop.Ref = spec.NewRef("#/components/schemas/" + name)
+				attr := attribute.GetStructAttrByName(field, name)
+				if attr == nil {
+					attr = &attribute.Attribute{}
+				}
+				sch1 := oa.NewObjectSchema(attr.Value)
+				field.VisitElements(astp.ElementField, func(element *astp.Element) bool {
+					return !element.Private()
+				}, func(field *astp.Element) {
+					// TODO: 多层嵌套需要递归
+					prop, _ := oa.NewProp(field.TypeString)
+					prop.Spec.Format = field.TypeString
+					prop.Spec.Description = field.Comment
+					t := field.GetTag()
+					fname := t.Get("json")
+					if fname == "-" {
+						return
+					}
+					if fname == "" {
+						fname = field.Name
+					}
+					sch1.Spec.Properties[fname] = prop
+				})
+				oa.Spec.Components.Spec.Schemas[name] = sch1
+
+			}
 			t := field.GetTag()
 			fname := t.Get("json")
+			if fname == "-" {
+				return
+			}
 			if fname == "" {
 				fname = field.Name
 			}
@@ -388,6 +497,82 @@ func (oa *OpenAPI) handleParam(pf *astp.Element) {
 		oa.Spec.Components.Spec.Schemas[name] = sch
 
 	}
+}
+func (oa *OpenAPI) NewObjectSchema(comment string) *spec.RefOrSpec[spec.Schema] {
+	sch := spec.NewSchemaSpec()
+	v1 := spec.NewSingleOrArray[string]("object")
+	sch.Spec.Type = &v1
+	sch.Spec.Description = comment
+	sch.Spec.Properties = make(map[string]*spec.RefOrSpec[spec.Schema])
+	return sch
+}
+
+func (oa *OpenAPI) NewProp(v string) (*spec.RefOrSpec[spec.Schema], bool) {
+	prop := spec.NewSchemaSpec()
+	var v1 spec.SingleOrArray[string]
+	var tmp bool
+	if strings.Contains(v, "string") {
+		v1 = spec.NewSingleOrArray[string]("string")
+	} else if strings.Contains(v, "int") {
+		v1 = spec.NewSingleOrArray[string]("integer")
+	} else if strings.Contains(v, "bool") {
+		v1 = spec.NewSingleOrArray[string]("boolean")
+	} else {
+		v1 = spec.NewSingleOrArray[string]("object")
+		tmp = true
+	}
+	prop.Spec.Type = &v1
+	return prop, tmp
+}
+
+func (oa *OpenAPI) handleResults(pf *astp.Element) {
+	name := pf.Item.TypeString
+	attr := attribute.GetStructAttrByName(pf.Item, name)
+	sch := oa.NewObjectSchema(attr.Value)
+	pf.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
+		return !element.Private()
+	}, func(field *astp.Element) {
+		prop, tmp := oa.NewProp(field.TypeString)
+		prop.Spec.Format = field.TypeString
+		prop.Spec.Description = field.Comment
+		if tmp {
+			name := field.Name
+			prop.Ref = spec.NewRef("#/components/schemas/" + name)
+			attr := attribute.GetStructAttrByName(field, name)
+			sch1 := oa.NewObjectSchema(attr.Value)
+			field.VisitElements(astp.ElementField, func(element *astp.Element) bool {
+				return !element.Private()
+			}, func(field *astp.Element) {
+				// TODO: 多层嵌套需要递归
+				prop, _ := oa.NewProp(field.TypeString)
+				prop.Spec.Format = field.TypeString
+				prop.Spec.Description = field.Comment
+				t := field.GetTag()
+				fname := t.Get("json")
+				if fname == "-" {
+					return
+				}
+				if fname == "" {
+					fname = field.Name
+				}
+				sch1.Spec.Properties[fname] = prop
+			})
+			oa.Spec.Components.Spec.Schemas[name] = sch1
+
+		}
+
+		t := field.GetTag()
+		fname := t.Get("json")
+		if fname == "-" {
+			return
+		}
+		if fname == "" {
+			fname = field.Name
+		}
+		sch.Spec.Properties[fname] = prop
+	})
+
+	oa.Spec.Components.Spec.Schemas[name] = sch
 }
 
 func (oa *OpenAPI) Print(slot string) {
