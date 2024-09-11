@@ -159,7 +159,7 @@ func (oa *OpenAPI) NewSimpleParam(element *astp.Element, tag string) *spec.RefOr
 	param.Spec.Spec.In = tag
 	param.Spec.Spec.Required = isRequired
 
-	schema, _ := oa.NewProp(element.TypeString, element.Comment)
+	schema, _ := oa.NewProp(element)
 	schema.Spec.Default = def
 	param.Spec.Spec.Schema = schema
 	return param
@@ -493,6 +493,40 @@ func (oa *OpenAPI) AddResponse(op *spec.Extendable[spec.Operation], code string,
 	op.Spec.Responses.Spec.Response[code] = resp
 }
 
+func (oa *OpenAPI) AddObjectSchama(field *astp.Element, prop *spec.RefOrSpec[spec.Schema], tag string) *spec.RefOrSpec[spec.Schema] {
+	name := field.TypeString
+	prop.Ref = spec.NewRef("#/components/schemas/" + name)
+	attr := attribute.GetStructAttrByName(field, name)
+	if attr == nil {
+		attr = &attribute.Attribute{}
+	}
+	var sch1 *spec.RefOrSpec[spec.Schema]
+	if field.ElementType == astp.ElementEnum {
+		sch1 = oa.NewEnumSchema("integer")
+		field.Item.VisitElementsAll(astp.ElementEnum, func(element *astp.Element) {
+			sch1.Spec.Enum = append(sch1.Spec.Enum, element.Value)
+		})
+	} else {
+		sch1 = oa.NewObjectSchema(attr.Value)
+		field.VisitElements(astp.ElementField, func(element *astp.Element) bool {
+			return !element.Private()
+		}, func(field *astp.Element) {
+			// TODO: 多层嵌套需要递归
+			prop, _ := oa.NewProp(field)
+			t := field.GetTag()
+			fname := t.Get(tag)
+			if fname == "-" {
+				return
+			}
+			if fname == "" {
+				fname = field.Name
+			}
+			sch1.Spec.Properties[fname] = prop
+		})
+	}
+	return sch1
+}
+
 func (oa *OpenAPI) handleParam(pf *astp.Element) {
 
 	attr := attribute.GetLastAttr(pf)
@@ -506,32 +540,11 @@ func (oa *OpenAPI) handleParam(pf *astp.Element) {
 		pf.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
 			return !element.Private()
 		}, func(field *astp.Element) {
-			prop, tmp := oa.NewProp(field.TypeString, field.Comment)
+			name := field.TypeString
+			prop, tmp := oa.NewProp(field)
 			if tmp {
-				name := field.Name
-				prop.Ref = spec.NewRef("#/components/schemas/" + name)
-				attr := attribute.GetStructAttrByName(field, name)
-				if attr == nil {
-					attr = &attribute.Attribute{}
-				}
-				sch1 := oa.NewObjectSchema(attr.Value)
-				field.VisitElements(astp.ElementField, func(element *astp.Element) bool {
-					return !element.Private()
-				}, func(field *astp.Element) {
-					// TODO: 多层嵌套需要递归
-					prop, _ := oa.NewProp(field.TypeString, field.Comment)
-					t := field.GetTag()
-					fname := t.Get("json")
-					if fname == "-" {
-						return
-					}
-					if fname == "" {
-						fname = field.Name
-					}
-					sch1.Spec.Properties[fname] = prop
-				})
+				sch1 := oa.AddObjectSchama(field, prop, "json")
 				oa.Spec.Components.Spec.Schemas[name] = sch1
-
 			}
 			t := field.GetTag()
 			fname := t.Get("json")
@@ -553,30 +566,11 @@ func (oa *OpenAPI) handleParam(pf *astp.Element) {
 		pf.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
 			return !element.Private()
 		}, func(field *astp.Element) {
-			prop, tmp := oa.NewProp(field.TypeString, field.Comment)
+			name := field.TypeString
+			prop, tmp := oa.NewProp(field)
 			if tmp {
-				name := field.Name
-				prop.Ref = spec.NewRef("#/components/schemas/" + name)
-				attr := attribute.GetStructAttrByName(field, name)
-				if attr == nil {
-					attr = &attribute.Attribute{}
-				}
-				sch1 := oa.NewObjectSchema(attr.Value)
-				field.VisitElements(astp.ElementField, func(element *astp.Element) bool {
-					return !element.Private()
-				}, func(field *astp.Element) {
-					// TODO: 多层嵌套需要递归
-					prop, _ := oa.NewProp(field.TypeString, field.Comment)
-					t := field.GetTag()
-					fname := t.Get("xml")
-					if fname == "-" {
-						return
-					}
-					if fname == "" {
-						fname = field.Name
-					}
-					sch1.Spec.Properties[fname] = prop
-				})
+
+				sch1 := oa.AddObjectSchama(field, prop, "xml")
 				oa.Spec.Components.Spec.Schemas[name] = sch1
 
 			}
@@ -600,30 +594,11 @@ func (oa *OpenAPI) handleParam(pf *astp.Element) {
 		pf.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
 			return !element.Private()
 		}, func(field *astp.Element) {
-			prop, tmp := oa.NewProp(field.TypeString, field.Comment)
+			name := field.TypeString
+			prop, tmp := oa.NewProp(field)
 			if tmp {
-				name := field.Name
-				prop.Ref = spec.NewRef("#/components/schemas/" + name)
-				attr := attribute.GetStructAttrByName(field, name)
-				if attr == nil {
-					attr = &attribute.Attribute{}
-				}
-				sch1 := oa.NewObjectSchema(attr.Value)
-				field.VisitElements(astp.ElementField, func(element *astp.Element) bool {
-					return !element.Private()
-				}, func(field *astp.Element) {
-					// TODO: 多层嵌套需要递归
-					prop, _ := oa.NewProp(field.TypeString, field.Comment)
-					t := field.GetTag()
-					fname := t.Get("form")
-					if fname == "-" {
-						return
-					}
-					if fname == "" {
-						fname = field.Name
-					}
-					sch1.Spec.Properties[fname] = prop
-				})
+				sch1 := oa.AddObjectSchama(field, prop, "form")
+
 				oa.Spec.Components.Spec.Schemas[name] = sch1
 
 			}
@@ -649,14 +624,21 @@ func (oa *OpenAPI) NewObjectSchema(comment string) *spec.RefOrSpec[spec.Schema] 
 	sch.Spec.Properties = make(map[string]*spec.RefOrSpec[spec.Schema])
 	return sch
 }
+func (oa *OpenAPI) NewEnumSchema(v string) *spec.RefOrSpec[spec.Schema] {
+	sch := spec.NewSchemaSpec()
+	v1 := spec.NewSingleOrArray[string](v)
+	sch.Spec.Type = &v1
+	sch.Spec.Enum = make([]any, 0)
+	return sch
+}
 
-func (oa *OpenAPI) NewProp(v string, desc string) (*spec.RefOrSpec[spec.Schema], bool) {
+func (oa *OpenAPI) NewProp(field *astp.Element) (*spec.RefOrSpec[spec.Schema], bool) {
 	prop := spec.NewSchemaSpec()
 	var v1 spec.SingleOrArray[string]
 	var tmp bool
-	if strings.Contains(v, "string") {
+	if strings.Contains(field.TypeString, "string") {
 
-		switch v {
+		switch field.TypeString {
 		case "[]string":
 			v1 = spec.NewSingleOrArray[string]("array")
 			prop.Spec.Items.Schema = spec.NewSchemaSpec()
@@ -665,9 +647,9 @@ func (oa *OpenAPI) NewProp(v string, desc string) (*spec.RefOrSpec[spec.Schema],
 		case "string":
 			v1 = spec.NewSingleOrArray[string]("string")
 		}
-	} else if strings.Contains(v, "int") {
+	} else if strings.Contains(field.TypeString, "int") {
 		v1 = spec.NewSingleOrArray[string]("integer")
-		switch v {
+		switch field.TypeString {
 		case "int":
 			prop.Spec.Format = "int32"
 		case "int64":
@@ -685,9 +667,9 @@ func (oa *OpenAPI) NewProp(v string, desc string) (*spec.RefOrSpec[spec.Schema],
 			prop.Spec.Items.Schema.Spec.Type = &tt
 			prop.Spec.Items.Schema.Spec.Format = "int64"
 		}
-	} else if strings.Contains(v, "float") {
+	} else if strings.Contains(field.TypeString, "float") {
 		v1 = spec.NewSingleOrArray[string]("number")
-		switch v {
+		switch field.TypeString {
 		case "float32", "float64":
 			prop.Spec.Format = "float"
 		case "[]float32", "[]float64":
@@ -697,24 +679,34 @@ func (oa *OpenAPI) NewProp(v string, desc string) (*spec.RefOrSpec[spec.Schema],
 			prop.Spec.Items.Schema.Spec.Type = &tt
 			prop.Spec.Items.Schema.Spec.Format = "float"
 		}
-	} else if strings.Contains(v, "bool") {
+	} else if strings.Contains(field.TypeString, "bool") {
 		v1 = spec.NewSingleOrArray[string]("boolean")
-	} else if strings.Contains(v, "Time") {
+	} else if strings.Contains(field.TypeString, "Time") {
 		v1 = spec.NewSingleOrArray[string]("string")
 		prop.Spec.Format = "date" // or date-time
 	} else {
-		if strings.HasPrefix(v, "[]") {
+		if strings.HasPrefix(field.TypeString, "[]") {
 			v1 = spec.NewSingleOrArray[string]("array")
 			prop.Spec.Items.Schema = spec.NewSchemaSpec()
 			tt := spec.NewSingleOrArray[string]("object")
 			prop.Spec.Items.Schema.Spec.Type = &tt
 		} else {
-			v1 = spec.NewSingleOrArray[string]("object")
+			if field.ElementType == astp.ElementEnum {
+				sch := oa.NewEnumSchema("integer")
+				field.Item.VisitElementsAll(astp.ElementEnum, func(element *astp.Element) {
+					sch.Spec.Enum = append(sch.Spec.Enum, element.Value)
+				})
+				prop.Spec = sch.Spec
+
+			} else {
+				v1 = spec.NewSingleOrArray[string]("object")
+			}
+
 		}
 
 		tmp = true
 	}
-	prop.Spec.Description = desc
+	prop.Spec.Description = field.Comment
 	prop.Spec.Type = &v1
 	return prop, tmp
 }
@@ -727,27 +719,11 @@ func (oa *OpenAPI) handleResults(pf *astp.Element) {
 	pf.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
 		return !element.Private()
 	}, func(field *astp.Element) {
-		prop, tmp := oa.NewProp(field.TypeString, field.Comment)
+		name := field.TypeString
+		prop, tmp := oa.NewProp(field)
 		if tmp {
-			name := field.Name
-			prop.Ref = spec.NewRef("#/components/schemas/" + name)
-			attr := attribute.GetStructAttrByName(field, name)
-			sch1 := oa.NewObjectSchema(attr.Value)
-			field.VisitElements(astp.ElementField, func(element *astp.Element) bool {
-				return !element.Private()
-			}, func(field *astp.Element) {
-				// TODO: 多层嵌套需要递归
-				prop, _ := oa.NewProp(field.TypeString, field.Comment)
-				t := field.GetTag()
-				fname := t.Get("json")
-				if fname == "-" {
-					return
-				}
-				if fname == "" {
-					fname = field.Name
-				}
-				sch1.Spec.Properties[fname] = prop
-			})
+			sch1 := oa.AddObjectSchama(field, prop, "json")
+
 			oa.Spec.Components.Spec.Schemas[name] = sch1
 
 		}
