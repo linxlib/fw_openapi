@@ -1,6 +1,8 @@
 package fw_openapi
 
 import (
+	"bufio"
+	"github.com/gookit/goutil/fsutil"
 	"github.com/linxlib/astp"
 	"github.com/linxlib/fw"
 	"github.com/linxlib/fw/attribute"
@@ -9,7 +11,6 @@ import (
 	"github.com/sv-tools/openapi/spec"
 	"gopkg.in/yaml.v3"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -24,6 +25,7 @@ var innerAttrNames = map[string]attribute.AttributeType{
 	"Summary":        attribute.TypeDoc,
 	"TermsOfService": attribute.TypeDoc,
 }
+var openApiMiddleware *middleware.OpenApiMiddleware
 
 func init() {
 	for s, attributeType := range innerAttrNames {
@@ -37,11 +39,12 @@ func init() {
 //TODO: 4. components 里结构体本身的Doc需要增加
 //TODO: 5. 隐藏Schemas
 
-func NewOpenAPIFromFWServer(s *fw.Server, fileName string) *OpenAPI {
+func NewOpenAPIFromFWServer(s *fw.Server) *OpenAPI {
+	hasLicenseFile := fsutil.FileExist("LICENSE")
 	oa := &OpenAPI{
 		Extendable: spec.NewOpenAPI(),
 		s:          s,
-		fileName:   fileName,
+		//fileName:   fileName,
 	}
 	oa.Spec.OpenAPI = "3.1.0"
 	info := spec.NewInfo()
@@ -53,8 +56,21 @@ func NewOpenAPIFromFWServer(s *fw.Server, fileName string) *OpenAPI {
 	info.Spec.Contact.Spec.URL = "https://github.com/linxlib/fw"
 	info.Spec.Contact.Spec.Name = "fw"
 	info.Spec.License = spec.NewLicense()
-	info.Spec.License.Spec.Name = "MIT License"
-	info.Spec.License.Spec.URL = "https://opensource.org/license/MIT"
+	var licenseFileContent []byte
+	if hasLicenseFile {
+		licenseFileContent, _ = os.ReadFile("LICENSE")
+		f, _ := os.Open("LICENSE")
+		scanner := bufio.NewScanner(f)
+		if scanner.Scan() {
+			info.Spec.License.Spec.Name = scanner.Text()
+		}
+		info.Spec.License.Spec.URL = "./LICENSE"
+	} else {
+		info.Spec.License.Spec.Identifier = "MIT"
+		info.Spec.License.Spec.Name = "MIT License"
+		info.Spec.License.Spec.URL = "https://opensource.org/license/MIT"
+	}
+
 	info.Spec.Version = "1.0.0@beta"
 	oa.Spec.Info = info
 	oa.Spec.Paths = spec.NewPaths()
@@ -63,16 +79,17 @@ func NewOpenAPIFromFWServer(s *fw.Server, fileName string) *OpenAPI {
 	s.RegisterHooks(oa)
 	oa.so = new(fw.ServerOption)
 	oa.s.Provide(oa.so)
-	s.Use(middleware.NewOpenApiMiddleware())
+	openApiMiddleware = middleware.NewOpenApiMiddleware(hasLicenseFile, licenseFileContent)
+	s.Use(openApiMiddleware)
 
 	return oa
 }
 
 type OpenAPI struct {
 	*spec.Extendable[spec.OpenAPI]
-	s        *fw.Server
-	fileName string
-	so       *fw.ServerOption
+	s *fw.Server
+	//fileName string
+	so *fw.ServerOption
 }
 
 func joinRoute(base string, r string) string {
@@ -381,7 +398,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 			return true
 		}, func(element *astp.Element) {
 			oa.Log("results", element.TypeString)
-			if element.ElementType != astp.ElementStruct {
+			if element.ItemType != astp.ElementStruct {
 				if element.TypeString == "error" {
 					oa.Log("results", "add 500")
 					resp := oa.NewStringResponse("fail", "text/plain")
@@ -406,7 +423,11 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 			oa.handleResults(element)
 			//fmt.Println(element.String())
 			oa.Log("results", "add 200 object ")
-			resp := oa.NewObjectResponse(element.ElementString, "success", "application/json")
+			schemaName := element.ElementString
+			if schemaName == "" {
+				schemaName = element.Item.ElementString
+			}
+			resp := oa.NewObjectResponse(schemaName, "success", "application/json")
 
 			op.Spec.Responses.Spec.Response["200"] = resp
 		})
@@ -715,6 +736,9 @@ func (oa *OpenAPI) handleResults(pf *astp.Element) {
 	schemaName := pf.Item.TypeString
 	attr := attribute.GetStructAttrByName(pf.Item, schemaName)
 	schemaName = pf.ElementString
+	if schemaName == "" {
+		schemaName = pf.Item.ElementString
+	}
 	sch := oa.NewObjectSchema(attr.Value)
 	pf.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
 		return !element.Private()
@@ -723,7 +747,6 @@ func (oa *OpenAPI) handleResults(pf *astp.Element) {
 		prop, tmp := oa.NewProp(field)
 		if tmp {
 			sch1 := oa.AddObjectSchama(field, prop, "json")
-
 			oa.Spec.Components.Spec.Schemas[name] = sch1
 
 		}
@@ -746,7 +769,7 @@ func (oa *OpenAPI) Print(slot string) {
 
 	switch slot {
 	case fw.AfterListen:
-		oa.WriteOut(oa.fileName)
+		oa.WriteOut()
 		var so = new(fw.ServerOption)
 		oa.s.Provide(so)
 		style := pterm.NewStyle(pterm.FgLightGreen, pterm.Bold)
@@ -790,25 +813,11 @@ func (oa *OpenAPI) HandleServerInfo(si []string) {
 	}
 }
 
-func (oa *OpenAPI) WriteOut(file string) error {
-	if filepath.Ext(file) == ".yaml" {
-		bs, err := yaml.Marshal(oa)
-		if err != nil {
-			return err
-		}
-		err = os.WriteFile(file, bs, os.ModePerm)
-		if err != nil {
-			return err
-		}
-	} else {
-		bs, err := oa.MarshalJSON()
-		if err != nil {
-			return err
-		}
-		err = os.WriteFile(file, bs, os.ModePerm)
-		if err != nil {
-			return err
-		}
+func (oa *OpenAPI) WriteOut() error {
+	bs, err := yaml.Marshal(oa)
+	if err != nil {
+		return err
 	}
+	openApiMiddleware.SetDocContent(bs)
 	return nil
 }

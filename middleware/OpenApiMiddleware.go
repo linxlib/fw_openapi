@@ -3,7 +3,6 @@ package middleware
 import (
 	"github.com/linxlib/fw"
 	"github.com/valyala/fasthttp"
-	"strings"
 )
 
 import "embed"
@@ -14,34 +13,13 @@ var FS embed.FS
 //go:embed rapi/*
 var RAPIFS embed.FS
 
-func NewOpenApiMiddleware() *OpenApiMiddleware {
+func NewOpenApiMiddleware(hasLicenseFile bool, licenseFileContent []byte) *OpenApiMiddleware {
 	return &OpenApiMiddleware{
-		MiddlewareGlobal: fw.NewMiddlewareGlobal("OpenApiMiddleware"),
-		options:          new(OpenApiOptions),
+		MiddlewareGlobal:   fw.NewMiddlewareGlobal("OpenApiMiddleware"),
+		options:            new(OpenApiOptions),
+		hasLicenseFile:     hasLicenseFile,
+		licenseFileContent: licenseFileContent,
 	}
-}
-
-func joinRoute(base string, r string) string {
-	var result = base
-	if r == "/" || r == "" {
-
-		if strings.HasSuffix(result, "/") && result != "/" {
-			result = strings.TrimSuffix(result, "/")
-			r = ""
-		} else {
-			r = strings.TrimSuffix(r, "/")
-			result += r
-		}
-	} else {
-		if strings.HasSuffix(result, "/") {
-			r = strings.TrimPrefix(r, "/")
-			result += r
-		} else {
-			r = strings.TrimPrefix(r, "/")
-			result += "/" + r
-		}
-	}
-	return result
 }
 
 type OpenApiOptions struct {
@@ -53,9 +31,15 @@ type OpenApiOptions struct {
 
 type OpenApiMiddleware struct {
 	*fw.MiddlewareGlobal
-	options *OpenApiOptions
+	options            *OpenApiOptions
+	hasLicenseFile     bool
+	licenseFileContent []byte
+	docContent         []byte
 }
 
+func (o *OpenApiMiddleware) SetDocContent(docContent []byte) {
+	o.docContent = docContent
+}
 func (o *OpenApiMiddleware) DoInitOnce() {
 	o.LoadConfig("openapi", o.options)
 }
@@ -72,6 +56,17 @@ func (o *OpenApiMiddleware) Router(ctx *fw.MiddlewareContext) []*fw.RouteItem {
 			Middleware: o,
 		})
 	}
+	if o.hasLicenseFile {
+		ris = append(ris, &fw.RouteItem{
+			Method: "GET",
+			Path:   "/doc/LICENSE",
+			H: func(context *fw.Context) {
+				context.Data(200, "text/plain", o.licenseFileContent)
+			},
+			Middleware: o,
+		})
+	}
+
 	ri := &fw.RouteItem{
 		Method:     "GET",
 		Path:       "/doc/{any:*}",
@@ -98,7 +93,7 @@ func (o *OpenApiMiddleware) Router(ctx *fw.MiddlewareContext) []*fw.RouteItem {
 		Method: "GET",
 		Path:   "/doc/openapi.yaml",
 		H: func(context *fw.Context) {
-			context.File(o.options.FileName)
+			context.Data(200, "text/plain;charset=UTF-8", o.docContent)
 		},
 		Middleware: o,
 	})
