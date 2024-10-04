@@ -13,6 +13,9 @@ var FS embed.FS
 //go:embed rapi/*
 var RAPIFS embed.FS
 
+//go:embed openapi-ui/*
+var UIFS embed.FS
+
 func NewOpenApiMiddleware(hasLicenseFile bool, licenseFileContent []byte) *OpenApiMiddleware {
 	return &OpenApiMiddleware{
 		MiddlewareGlobal:   fw.NewMiddlewareGlobal("OpenApiMiddleware"),
@@ -26,7 +29,7 @@ type OpenApiOptions struct {
 	Redirect bool `yaml:"redirect" default:"true"` //if redirect /doc to /doc/index.html
 	//Route    string `yaml:"route" default:"doc"`             // the page route of openapi document. e.g. if your want to serve document at /docA/index.html, just set route to docA
 	FileName string `yaml:"fileName" default:"openapi.yaml"` //file path refer to openapi.yaml or openapi.json
-	Type     string `yaml:"type" default:"swagger"`          //ui type. swagger\rapi
+	Type     string `yaml:"type" default:"swagger"`          //ui type. swagger\rapi\openapi-ui
 }
 
 type OpenApiMiddleware struct {
@@ -82,6 +85,11 @@ func (o *OpenApiMiddleware) Router(ctx *fw.MiddlewareContext) []*fw.RouteItem {
 		ri.H = func(context *fw.Context) {
 			path := context.GetFastContext().UserValue("any").(string)
 			fasthttp.ServeFS(context.GetFastContext(), RAPIFS, "/rapi/"+path)
+		}
+	case "openapi-ui":
+		ri.H = func(context *fw.Context) {
+			path := context.GetFastContext().UserValue("any").(string)
+			fasthttp.ServeFS(context.GetFastContext(), UIFS, "/openapi-ui/"+path)
 		}
 	default:
 		ri.H = func(context *fw.Context) {
