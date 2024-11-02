@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"github.com/linxlib/fw"
-	"github.com/valyala/fasthttp"
 )
 
 import "embed"
@@ -79,17 +78,17 @@ func (o *OpenApiMiddleware) Router(ctx *fw.MiddlewareContext) []*fw.RouteItem {
 	case "swagger":
 		ri.H = func(context *fw.Context) {
 			path := context.GetFastContext().UserValue("any").(string)
-			fasthttp.ServeFS(context.GetFastContext(), FS, "/swagger/"+path)
+			context.ServeFS(FS, "/swagger/"+path)
 		}
 	case "rapi":
 		ri.H = func(context *fw.Context) {
 			path := context.GetFastContext().UserValue("any").(string)
-			fasthttp.ServeFS(context.GetFastContext(), RAPIFS, "/rapi/"+path)
+			context.ServeFS(RAPIFS, "/rapi/"+path)
 		}
 	case "openapi-ui":
 		ri.H = func(context *fw.Context) {
 			path := context.GetFastContext().UserValue("any").(string)
-			fasthttp.ServeFS(context.GetFastContext(), UIFS, "/openapi-ui/"+path)
+			context.ServeFS(UIFS, "/openapi-ui/"+path)
 		}
 	default:
 		ri.H = func(context *fw.Context) {

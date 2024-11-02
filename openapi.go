@@ -2,6 +2,7 @@ package fw_openapi
 
 import (
 	"bufio"
+	"fmt"
 	"github.com/gookit/goutil/fsutil"
 	"github.com/linxlib/astp"
 	"github.com/linxlib/fw"
@@ -66,7 +67,7 @@ func NewOpenAPIFromFWServer(s *fw.Server) *OpenAPI {
 		}
 		info.Spec.License.Spec.URL = "./LICENSE"
 	} else {
-		info.Spec.License.Spec.Identifier = "MIT"
+		//info.Spec.License.Spec.Identifier = "MIT"
 		info.Spec.License.Spec.Name = "MIT License"
 		info.Spec.License.Spec.URL = "https://opensource.org/license/MIT"
 	}
@@ -705,6 +706,16 @@ func (oa *OpenAPI) NewProp(field *astp.Element) (*spec.RefOrSpec[spec.Schema], b
 	} else if strings.Contains(field.TypeString, "Time") {
 		v1 = spec.NewSingleOrArray[string]("string")
 		prop.Spec.Format = "date" // or date-time
+	} else if field.ItemType == astp.ElementStruct && field.Item != nil {
+		fmt.Println("struct")
+		v1 = spec.NewSingleOrArray[string]("object")
+		sch := oa.NewObjectSchema(field.Comment)
+		field.Item.VisitElementsAll(astp.ElementField, func(element *astp.Element) {
+			sch1, _ := oa.NewProp(element)
+			sch.Spec.Properties[element.Name] = sch1
+		})
+		prop.Spec = sch.Spec
+
 	} else {
 		if strings.HasPrefix(field.TypeString, "[]") {
 			v1 = spec.NewSingleOrArray[string]("array")
@@ -777,7 +788,12 @@ func (oa *OpenAPI) Print(slot string) {
 		style4 := pterm.NewStyle(pterm.FgWhite)
 		style.Print("  ➜ ")
 		style3.Printf("%10s", "ApiDoc: ")
-		style4.Printf("http://%s:%d%s\n", so.IntranetIP, so.Port, so.BasePath+"/doc"+"/index.html")
+		r := joinRoute(so.BasePath, "/doc/index.html")
+		if oa.s.CanAccessByLan() {
+			style4.Printf("http://%s:%d%s\n", so.IntranetIP, so.Port, r)
+		} else {
+			style4.Printf("http://%s:%d%s\n", "localhost", so.Port, r)
+		}
 
 	}
 }
