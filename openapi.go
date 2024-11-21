@@ -2,7 +2,6 @@ package fw_openapi
 
 import (
 	"bufio"
-	"fmt"
 	"github.com/gookit/goutil/fsutil"
 	"github.com/linxlib/astp"
 	"github.com/linxlib/fw"
@@ -707,7 +706,7 @@ func (oa *OpenAPI) NewProp(field *astp.Element) (*spec.RefOrSpec[spec.Schema], b
 		v1 = spec.NewSingleOrArray[string]("string")
 		prop.Spec.Format = "date" // or date-time
 	} else if field.ItemType == astp.ElementStruct && field.Item != nil {
-		fmt.Println("struct")
+		//fmt.Println("struct")
 		v1 = spec.NewSingleOrArray[string]("object")
 		sch := oa.NewObjectSchema(field.Comment)
 		field.Item.VisitElementsAll(astp.ElementField, func(element *astp.Element) {
