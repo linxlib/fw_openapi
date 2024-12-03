@@ -270,6 +270,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 					return !element.Private()
 				}, func(element *astp.Element) {
 					param := oa.NewSimpleParam(element, "path")
+					param.Spec.Spec.Required = true
 					op.Spec.Parameters = append(op.Spec.Parameters, param)
 				})
 
@@ -532,7 +533,7 @@ func (oa *OpenAPI) AddResponse(op *spec.Extendable[spec.Operation], code string,
 	op.Spec.Responses.Spec.Response[code] = resp
 }
 
-func (oa *OpenAPI) AddObjectSchama(field *astp.Element, prop *spec.RefOrSpec[spec.Schema], tag string) *spec.RefOrSpec[spec.Schema] {
+func (oa *OpenAPI) AddObjectSchema(field *astp.Element, prop *spec.RefOrSpec[spec.Schema], tag string) *spec.RefOrSpec[spec.Schema] {
 	name := field.TypeString
 	prop.Ref = spec.NewRef("#/components/schemas/" + name)
 	attr := attribute.GetStructAttrByName(field, name)
@@ -566,6 +567,27 @@ func (oa *OpenAPI) AddObjectSchama(field *astp.Element, prop *spec.RefOrSpec[spe
 	return sch1
 }
 
+func (oa *OpenAPI) AddArraySchema(field *astp.Element, prop *spec.RefOrSpec[spec.Schema], tag string) *spec.RefOrSpec[spec.Schema] {
+	name := field.TypeString
+	attr := attribute.GetStructAttrByName(field, name)
+	if attr == nil {
+		attr = &attribute.Attribute{}
+	}
+	var sch1 *spec.RefOrSpec[spec.Schema]
+	sch1 = oa.NewArraySchema(attr.Value)
+	prop1, _ := oa.NewProp(field)
+	t := field.GetTag()
+	fname := t.Get(tag)
+	if fname == "-" {
+		return sch1
+	}
+	if fname == "" {
+		fname = field.Name
+	}
+	sch1.Spec.Properties[fname] = prop1
+	return sch1
+}
+
 func (oa *OpenAPI) handleParam(pf *astp.Element) {
 
 	attr := attribute.GetLastAttr(pf)
@@ -582,9 +604,16 @@ func (oa *OpenAPI) handleParam(pf *astp.Element) {
 			name := field.TypeString
 			prop, tmp := oa.NewProp(field)
 			if tmp {
-				sch1 := oa.AddObjectSchama(field, prop, "json")
+				sch1 := oa.AddObjectSchema(field, prop, "json")
 				oa.Spec.Components.Spec.Schemas[name] = sch1
+			} else {
+				if field.IsItemSlice {
+					//sch1 := oa.AddArraySchema(field, prop, "json")
+					//oa.Spec.Components.Spec.Schemas[name] = sch1
+				}
+
 			}
+
 			t := field.GetTag()
 			fname := t.Get("json")
 			if fname == "-" {
@@ -609,7 +638,7 @@ func (oa *OpenAPI) handleParam(pf *astp.Element) {
 			prop, tmp := oa.NewProp(field)
 			if tmp {
 
-				sch1 := oa.AddObjectSchama(field, prop, "xml")
+				sch1 := oa.AddObjectSchema(field, prop, "xml")
 				oa.Spec.Components.Spec.Schemas[name] = sch1
 
 			}
@@ -636,7 +665,7 @@ func (oa *OpenAPI) handleParam(pf *astp.Element) {
 			name := field.TypeString
 			prop, tmp := oa.NewProp(field)
 			if tmp {
-				sch1 := oa.AddObjectSchama(field, prop, "form")
+				sch1 := oa.AddObjectSchema(field, prop, "form")
 
 				oa.Spec.Components.Spec.Schemas[name] = sch1
 
@@ -663,6 +692,17 @@ func (oa *OpenAPI) NewObjectSchema(comment string) *spec.RefOrSpec[spec.Schema] 
 	sch.Spec.Properties = make(map[string]*spec.RefOrSpec[spec.Schema])
 	return sch
 }
+
+func (oa *OpenAPI) NewArraySchema(comment string) *spec.RefOrSpec[spec.Schema] {
+	sch := spec.NewSchemaSpec()
+	v1 := spec.NewSingleOrArray[string]("array")
+	sch.Spec.Type = &v1
+	sch.Spec.Items = spec.NewBoolOrSchema(true, nil)
+	sch.Spec.Description = comment
+	sch.Spec.Properties = make(map[string]*spec.RefOrSpec[spec.Schema])
+	return sch
+}
+
 func (oa *OpenAPI) NewEnumSchema(v string) *spec.RefOrSpec[spec.Schema] {
 	sch := spec.NewSchemaSpec()
 	v1 := spec.NewSingleOrArray[string](v)
@@ -680,6 +720,8 @@ func (oa *OpenAPI) NewProp(field *astp.Element) (*spec.RefOrSpec[spec.Schema], b
 		switch field.TypeString {
 		case "[]string":
 			v1 = spec.NewSingleOrArray[string]("array")
+
+			prop.Spec.Items = spec.NewBoolOrSchema(true, nil)
 			prop.Spec.Items.Schema = spec.NewSchemaSpec()
 			tt := spec.NewSingleOrArray[string]("string")
 			prop.Spec.Items.Schema.Spec.Type = &tt
@@ -695,12 +737,14 @@ func (oa *OpenAPI) NewProp(field *astp.Element) (*spec.RefOrSpec[spec.Schema], b
 			prop.Spec.Format = "int64"
 		case "[]int":
 			v1 = spec.NewSingleOrArray[string]("array")
+			prop.Spec.Items = spec.NewBoolOrSchema(true, nil)
 			prop.Spec.Items.Schema = spec.NewSchemaSpec()
 			tt := spec.NewSingleOrArray[string]("integer")
 			prop.Spec.Items.Schema.Spec.Type = &tt
 			prop.Spec.Items.Schema.Spec.Format = "int32"
 		case "[]int64":
 			v1 = spec.NewSingleOrArray[string]("array")
+			prop.Spec.Items = spec.NewBoolOrSchema(true, nil)
 			prop.Spec.Items.Schema = spec.NewSchemaSpec()
 			tt := spec.NewSingleOrArray[string]("integer")
 			prop.Spec.Items.Schema.Spec.Type = &tt
@@ -713,6 +757,7 @@ func (oa *OpenAPI) NewProp(field *astp.Element) (*spec.RefOrSpec[spec.Schema], b
 			prop.Spec.Format = "float"
 		case "[]float32", "[]float64":
 			v1 = spec.NewSingleOrArray[string]("array")
+			prop.Spec.Items = spec.NewBoolOrSchema(true, nil)
 			prop.Spec.Items.Schema = spec.NewSchemaSpec()
 			tt := spec.NewSingleOrArray[string]("number")
 			prop.Spec.Items.Schema.Spec.Type = &tt
@@ -736,6 +781,7 @@ func (oa *OpenAPI) NewProp(field *astp.Element) (*spec.RefOrSpec[spec.Schema], b
 	} else {
 		if strings.HasPrefix(field.TypeString, "[]") {
 			v1 = spec.NewSingleOrArray[string]("array")
+			prop.Spec.Items = spec.NewBoolOrSchema(true, nil)
 			prop.Spec.Items.Schema = spec.NewSchemaSpec()
 			tt := spec.NewSingleOrArray[string]("object")
 			prop.Spec.Items.Schema.Spec.Type = &tt
@@ -780,7 +826,7 @@ func (oa *OpenAPI) handleResults(pf *astp.Element) {
 		name := field.TypeString
 		prop, tmp := oa.NewProp(field)
 		if tmp {
-			sch1 := oa.AddObjectSchama(field, prop, "json")
+			sch1 := oa.AddObjectSchema(field, prop, "json")
 			oa.Spec.Components.Spec.Schemas[name] = sch1
 
 		}
