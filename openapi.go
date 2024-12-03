@@ -409,7 +409,6 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 					op.Spec.Responses.Spec.Response["200"] = resp
 					return
 				}
-
 			}
 			if element.Item == nil {
 				if op.Spec.Responses.Spec.Response["200"] == nil {
@@ -427,9 +426,14 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 			if schemaName == "" {
 				schemaName = element.Item.ElementString
 			}
-			resp := oa.NewObjectResponse(schemaName, "success", "application/json")
+			if element.IsItemSlice {
+				resp := oa.NewArrayObjectResponse(schemaName, "success", "application/json")
+				op.Spec.Responses.Spec.Response["200"] = resp
+			} else {
+				resp := oa.NewObjectResponse(schemaName, "success", "application/json")
+				op.Spec.Responses.Spec.Response["200"] = resp
+			}
 
-			op.Spec.Responses.Spec.Response["200"] = resp
 		})
 		if len(op.Spec.Responses.Spec.Response) == 0 || op.Spec.Responses.Spec.Response["200"] == nil {
 			oa.Log("results", "add 200 object default")
@@ -468,7 +472,21 @@ func (oa *OpenAPI) NewObjectResponse(schemaName string, desc string, contentType
 	md.Spec.Schema = sche
 	resp.Spec.Spec.Content[contentType] = md
 	return resp
+}
 
+func (oa *OpenAPI) NewArrayObjectResponse(schemaName string, desc string, contentType string) *spec.RefOrSpec[spec.Extendable[spec.Response]] {
+	resp := spec.NewResponseSpec()
+	resp.Spec.Spec.Description = desc
+	resp.Spec.Spec.Content = make(map[string]*spec.Extendable[spec.MediaType])
+	md := spec.NewMediaType()
+	sche := spec.NewSchemaSpec()
+	v1 := spec.NewSingleOrArray("array")
+	sche.Spec.Type = &v1
+	sche.Spec.Items = spec.NewBoolOrSchema(true, nil)
+	sche.Spec.Items.Schema = spec.NewRefOrSpec[spec.Schema](spec.NewRef("#/components/schemas/"+schemaName), nil)
+	md.Spec.Schema = sche
+	resp.Spec.Spec.Content[contentType] = md
+	return resp
 }
 
 func (oa *OpenAPI) NewStringResponse(desc string, contentType string) *spec.RefOrSpec[spec.Extendable[spec.Response]] {
@@ -749,7 +767,13 @@ func (oa *OpenAPI) handleResults(pf *astp.Element) {
 	if schemaName == "" {
 		schemaName = pf.Item.ElementString
 	}
-	sch := oa.NewObjectSchema(attr.Value)
+	var v string
+	if attr != nil {
+		v = attr.Value
+	} else {
+		v = schemaName
+	}
+	sch := oa.NewObjectSchema(v) // create components
 	pf.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
 		return !element.Private()
 	}, func(field *astp.Element) {
