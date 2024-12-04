@@ -2,8 +2,10 @@ package fw_openapi
 
 import (
 	"bufio"
+	"fmt"
 	"github.com/gookit/goutil/fsutil"
 	"github.com/linxlib/astp"
+	"github.com/linxlib/conv"
 	"github.com/linxlib/fw"
 	"github.com/linxlib/fw/attribute"
 	"github.com/linxlib/fw_openapi/middleware"
@@ -176,7 +178,7 @@ func (oa *OpenAPI) NewSimpleParam(element *astp.Element, tag string) *spec.RefOr
 	param.Spec.Spec.In = tag
 	param.Spec.Spec.Required = isRequired
 
-	schema, _ := oa.NewProp(element)
+	schema, _ := oa.NewProp(element, param)
 	schema.Spec.Default = def
 	param.Spec.Spec.Schema = schema
 	return param
@@ -681,6 +683,7 @@ func (oa *OpenAPI) handleParam(pf *astp.Element) {
 			sch.Spec.Properties[fname] = prop
 		})
 		oa.Spec.Components.Spec.Schemas[name] = sch
+
 	}
 
 }
@@ -711,7 +714,7 @@ func (oa *OpenAPI) NewEnumSchema(v string) *spec.RefOrSpec[spec.Schema] {
 	return sch
 }
 
-func (oa *OpenAPI) NewProp(field *astp.Element) (*spec.RefOrSpec[spec.Schema], bool) {
+func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Extendable[spec.Parameter]]) (*spec.RefOrSpec[spec.Schema], bool) {
 	prop := spec.NewSchemaSpec()
 	var v1 spec.SingleOrArray[string]
 	var tmp bool
@@ -768,7 +771,7 @@ func (oa *OpenAPI) NewProp(field *astp.Element) (*spec.RefOrSpec[spec.Schema], b
 	} else if strings.Contains(field.TypeString, "Time") {
 		v1 = spec.NewSingleOrArray[string]("string")
 		prop.Spec.Format = "date" // or date-time
-	} else if field.ItemType == astp.ElementStruct && field.Item != nil {
+	} else if field.ItemType == astp.ElementStruct && field.Item != nil && field.Item.ElementType == astp.ElementStruct {
 		//fmt.Println("struct")
 		v1 = spec.NewSingleOrArray[string]("object")
 		sch := oa.NewObjectSchema(field.Comment)
@@ -786,11 +789,17 @@ func (oa *OpenAPI) NewProp(field *astp.Element) (*spec.RefOrSpec[spec.Schema], b
 			tt := spec.NewSingleOrArray[string]("object")
 			prop.Spec.Items.Schema.Spec.Type = &tt
 		} else {
-			if field.ElementType == astp.ElementEnum {
+
+			if field.ElementType == astp.ElementEnum || (field.Item != nil && field.Item.ElementType == astp.ElementEnum) {
+				v1 = spec.NewSingleOrArray[string]("integer")
 				sch := oa.NewEnumSchema("integer")
 				field.Item.VisitElementsAll(astp.ElementEnum, func(element *astp.Element) {
 					sch.Spec.Enum = append(sch.Spec.Enum, element.Value)
+					if len(param) > 0 {
+						param[0].Spec.Spec.Description += fmt.Sprintf("\n- %d: %s", conv.Int(element.Value), element.Name)
+					}
 				})
+
 				prop.Spec = sch.Spec
 
 			} else {
@@ -801,7 +810,10 @@ func (oa *OpenAPI) NewProp(field *astp.Element) (*spec.RefOrSpec[spec.Schema], b
 
 		tmp = true
 	}
-	prop.Spec.Description = field.Comment
+	if prop.Spec.Description == "" {
+		prop.Spec.Description = field.Comment
+	}
+
 	prop.Spec.Type = &v1
 	return prop, tmp
 }
