@@ -74,10 +74,23 @@ func NewOpenAPIFromFWServer(s *fw.Server) *OpenAPI {
 	}
 
 	info.Spec.Version = "1.0.0@beta"
+	servers := spec.NewServer()
+	servers.Spec.URL = fmt.Sprintf("%s://%s:%d%s", s.Schema(), s.ListenAddr(), s.Port(), s.BasePath())
+
+	oa.Spec.Servers = append(oa.Spec.Servers, servers)
 	oa.Spec.Info = info
 	oa.Spec.Paths = spec.NewPaths()
 	oa.Spec.Components = spec.NewComponents()
 	oa.Spec.Components.Spec.Schemas = make(map[string]*spec.RefOrSpec[spec.Schema])
+
+	oa.Spec.Components.Spec.SecuritySchemes = make(map[string]*spec.RefOrSpec[spec.Extendable[spec.SecurityScheme]])
+	sec := spec.NewSecuritySchemeSpec()
+	sec.Spec.Spec.Name = "Authorization"
+	sec.Spec.Spec.Type = "apiKey"
+	sec.Spec.Spec.In = "header"
+
+	oa.Spec.Components.Spec.SecuritySchemes["ApiKeyAuth"] = sec
+
 	s.RegisterHooks(oa)
 	oa.so = new(fw.ServerOption)
 	oa.s.Provide(oa.so)
@@ -192,10 +205,15 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 	desc := ctl.Name
 	for _, attr := range attrs {
 		if attr.Type == attribute.TypeDoc {
-			desc = attr.Name
+			if attr.Value != "" {
+				desc = attr.Value
+			} else {
+				desc = attr.Name
+			}
+
 		}
 		if attr.Name == "TAG" {
-			tagName = attr.Value
+			tagName = ctl.Name
 			desc = attr.Value
 		}
 		if attr.Name == "ROUTE" {
@@ -216,8 +234,8 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 		route := oa.so.BasePath
 		route = joinRoute(route, r)
 		m := ""
-		desc := method.Name
-
+		summary := method.Name
+		desc := ""
 		attrs1 := attribute.GetMethodAttributes(method)
 		for _, a := range attrs1 {
 			if a.Type == attribute.TypeHttpMethod {
@@ -226,7 +244,14 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 			}
 			if a.Type == attribute.TypeDoc {
 				if a.Value != "" {
-					desc = a.Value
+					if summary == method.Name {
+						summary = a.Value
+					} else {
+						if summary != "" {
+							desc += "\n" + a.Value
+						}
+					}
+
 				}
 
 			}
@@ -243,7 +268,14 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 
 		op := spec.NewOperation()
 		op.Spec.OperationID = ctl.Name + "." + method.Name
-		op.Spec.Summary = desc
+		op.Spec.Summary = summary
+		op.Spec.Description = desc
+
+		op.Spec.Security = make([]spec.SecurityRequirement, 0)
+		sr := spec.NewSecurityRequirement()
+		sr["ApiKeyAuth"] = []string{"write:" + tagName, "read:" + tagName}
+		op.Spec.Security = append(op.Spec.Security, sr)
+
 		op.Spec.Tags = []string{tagName}
 		//params
 		method.VisitElements(astp.ElementParam, oa.checkParam, func(element *astp.Element) {
