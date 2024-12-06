@@ -4,7 +4,7 @@ go 1.22.0
 
 require (
 	github.com/gookit/goutil v0.6.17
-	github.com/linxlib/astp v0.2.15
+	github.com/linxlib/astp v0.2.16
 	github.com/linxlib/conv v1.1.1
 	github.com/linxlib/fw v0.5.1
 	github.com/pterm/pterm v0.12.80

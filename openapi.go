@@ -922,7 +922,6 @@ func (oa *OpenAPI) handleResults(pf *astp.Element) {
 		if tmp {
 			sch1 := oa.AddObjectSchema(field, prop, "json")
 			oa.Spec.Components.Spec.Schemas[name] = sch1
-
 		}
 
 		t := field.GetTag()
