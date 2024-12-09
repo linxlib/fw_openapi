@@ -18,7 +18,7 @@ import (
 
 var innerAttrNames = map[string]attribute.AttributeType{
 	"Tag":            attribute.TypeDoc,
-	"Deprecated":     attribute.TypeDoc,
+	"Deprecated":     attribute.TypeTagger,
 	"License":        attribute.TypeDoc,
 	"Version":        attribute.TypeDoc,
 	"Title":          attribute.TypeDoc,
@@ -204,6 +204,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 	tagName := ""
 	r := ""
 	desc := ctl.Name
+	isDeprecated := false
 	for _, attr := range attrs {
 		if attr.Type == attribute.TypeDoc {
 			if attr.Value != "" {
@@ -211,7 +212,11 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 			} else {
 				desc = attr.Name
 			}
-
+		}
+		if attr.Type == attribute.TypeTagger {
+			if attr.Name == "DEPRECATED" {
+				isDeprecated = true
+			}
 		}
 		if attr.Name == "TAG" {
 			tagName = ctl.Name
@@ -227,6 +232,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 	tag := spec.NewTag()
 	tag.Spec.Name = tagName
 	tag.Spec.Description = quoted(desc)
+
 	oa.Spec.Tags = append(oa.Spec.Tags, tag)
 
 	ctl.VisitElements(astp.ElementMethod, func(method *astp.Element) bool {
@@ -237,6 +243,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 		m := ""
 		summary := method.Name
 		desc := ""
+		isMethodDeprecated := false
 		attrs1 := attribute.GetMethodAttributes(method)
 		for _, a := range attrs1 {
 			if a.Type == attribute.TypeHttpMethod {
@@ -256,6 +263,11 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 				}
 
 			}
+			if a.Type == attribute.TypeTagger {
+				if a.Name == "DEPRECATED" {
+					isMethodDeprecated = true
+				}
+			}
 		}
 		if m == "" {
 			return
@@ -271,7 +283,8 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 		op.Spec.OperationID = ctl.Name + "." + method.Name
 		op.Spec.Summary = summary
 		op.Spec.Description = quoted(desc)
-
+		op.Spec.Deprecated = isDeprecated || isMethodDeprecated
+		
 		op.Spec.Security = make([]spec.SecurityRequirement, 0)
 		sr := spec.NewSecurityRequirement()
 		sr["ApiKeyAuth"] = []string{"write:" + tagName, "read:" + tagName}
