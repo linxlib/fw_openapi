@@ -172,6 +172,9 @@ func (oa *OpenAPI) checkParam(element *astp.Element) bool {
 func (oa *OpenAPI) NewSimpleParam(element *astp.Element, tag string) *spec.RefOrSpec[spec.Extendable[spec.Parameter]] {
 	t := element.GetTag()
 	name := t.Get(tag)
+	if name == "-" {
+		return nil
+	}
 	if name == "" {
 		name = element.Name
 	}
@@ -284,7 +287,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 		op.Spec.Summary = summary
 		op.Spec.Description = quoted(desc)
 		op.Spec.Deprecated = isDeprecated || isMethodDeprecated
-		
+
 		op.Spec.Security = make([]spec.SecurityRequirement, 0)
 		sr := spec.NewSecurityRequirement()
 		sr["ApiKeyAuth"] = []string{"write:" + tagName, "read:" + tagName}
@@ -354,6 +357,9 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 				}, func(element *astp.Element) {
 					t := element.GetTag()
 					name := t.Get("multipart")
+					if name == "-" {
+						return
+					}
 					if name == "" {
 						name = element.Name
 					}
@@ -845,6 +851,9 @@ func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Ex
 			sch1, _, _ := oa.NewProp(element)
 			t := element.GetTag()
 			name := t.Get("json")
+			if name == "-" {
+				return
+			}
 			if name == "" {
 				name = element.Name
 			}
@@ -863,6 +872,9 @@ func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Ex
 			sch1, _, _ := oa.NewProp(element)
 			t := element.GetTag()
 			name := t.Get("json")
+			if name == "-" {
+				return
+			}
 			if name == "" {
 				name = element.Name
 			}
