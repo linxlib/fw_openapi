@@ -6,6 +6,7 @@ window.onload = function() {
     url: "openapi.yaml",
     dom_id: '#swagger-ui',
     deepLinking: true,
+    docExpansion: 'none',
     presets: [
       SwaggerUIBundle.presets.apis,
       SwaggerUIStandalonePreset
@@ -18,7 +19,8 @@ window.onload = function() {
       activated: true,
       theme: 'monokai'
     },
-    validatorUrl: 'none'
+    validatorUrl: 'none',
+    tryItOutEnabled: true
   });
 
   //</editor-fold>
