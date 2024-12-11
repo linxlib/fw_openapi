@@ -6,7 +6,7 @@ require (
 	github.com/gookit/goutil v0.6.17
 	github.com/linxlib/astp v0.2.16
 	github.com/linxlib/conv v1.1.1
-	github.com/linxlib/fw v0.5.1
+	github.com/linxlib/fw v0.5.3
 	github.com/pterm/pterm v0.12.80
 	github.com/sv-tools/openapi v0.4.0
 	gopkg.in/yaml.v3 v3.0.1
