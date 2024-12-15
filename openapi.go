@@ -709,6 +709,16 @@ func (oa *OpenAPI) handleParam(pf *astp.Element) {
 			if fname == "" {
 				fname = field.Name
 			}
+			var example string
+			exampleStr := t.Get("example")
+			if exampleStr != "" {
+				example = exampleStr
+			}
+			if example != "" {
+				prop.Spec.Examples = make([]any, 0)
+				prop.Spec.Examples = append(prop.Spec.Examples, example)
+			}
+
 			sch.Spec.Properties[fname] = prop
 		})
 		oa.Spec.Components.Spec.Schemas[name] = sch
