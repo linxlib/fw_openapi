@@ -188,15 +188,25 @@ func (oa *OpenAPI) NewSimpleParam(element *astp.Element, tag string) *spec.RefOr
 	if defStr != "" {
 		def = defStr
 	}
+	var example string
+	exampleStr := t.Get("example")
+	if exampleStr != "" {
+		example = exampleStr
+	}
 
 	param := spec.NewParameterSpec()
 	param.Spec.Spec.Name = name
 	param.Spec.Spec.Description = quoted(element.Comment)
 	param.Spec.Spec.In = tag
 	param.Spec.Spec.Required = isRequired
+	if example != "" {
+		param.Spec.Spec.Example = example
+	}
 
 	schema, _, _ := oa.NewProp(element, param)
-	schema.Spec.Default = def
+	if def != "" {
+		schema.Spec.Default = def
+	}
 	param.Spec.Spec.Schema = schema
 	return param
 }
@@ -374,6 +384,7 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 						v1 := spec.NewSingleOrArray[string]("string")
 						prop.Spec.Format = ty
 						prop.Spec.Type = &v1
+						prop.Spec.Default = t.Get("default")
 						prop.Spec.Description = quoted(element.Comment)
 					}
 
@@ -602,10 +613,16 @@ func (oa *OpenAPI) AddObjectSchema(field *astp.Element, prop *spec.RefOrSpec[spe
 	}
 	var sch1 *spec.RefOrSpec[spec.Schema]
 	if field.ElementType == astp.ElementEnum {
-		sch1 = oa.NewEnumSchema("integer")
+		if field.IsEnumString {
+			sch1 = oa.NewEnumSchema("string")
+		} else {
+			sch1 = oa.NewEnumSchema("integer")
+		}
+
 		field.Item.VisitElementsAll(astp.ElementEnum, func(element *astp.Element) {
 			sch1.Spec.Enum = append(sch1.Spec.Enum, element.Value)
 		})
+
 	} else {
 		sch1 = oa.NewObjectSchema(attr.Value)
 		field.VisitElements(astp.ElementField, func(element *astp.Element) bool {
@@ -776,7 +793,8 @@ func (oa *OpenAPI) NewArraySchema(comment string) *spec.RefOrSpec[spec.Schema] {
 
 func (oa *OpenAPI) NewEnumSchema(v string) *spec.RefOrSpec[spec.Schema] {
 	sch := spec.NewSchemaSpec()
-	v1 := spec.NewSingleOrArray[string](v)
+	var v1 = spec.NewSingleOrArray[string](v)
+
 	sch.Spec.Type = &v1
 	sch.Spec.Enum = make([]any, 0)
 	return sch
@@ -894,12 +912,24 @@ func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Ex
 		} else {
 
 			if field.ElementType == astp.ElementEnum || (field.Item != nil && field.Item.ElementType == astp.ElementEnum) {
-				v1 = spec.NewSingleOrArray[string]("integer")
-				sch := oa.NewEnumSchema("integer")
+
+				var sch *spec.RefOrSpec[spec.Schema]
+				if field.Item.IsEnumString {
+					v1 = spec.NewSingleOrArray[string]("string")
+				} else {
+					v1 = spec.NewSingleOrArray[string]("integer")
+				}
+				sch = oa.NewEnumSchema("integer")
+
 				field.Item.VisitElementsAll(astp.ElementEnum, func(element *astp.Element) {
 					sch.Spec.Enum = append(sch.Spec.Enum, element.Value)
 					if len(param) > 0 {
-						param[0].Spec.Spec.Description += fmt.Sprintf("\n- %d: %s", conv.Int(element.Value), element.Name)
+						if field.Item.IsEnumString {
+							param[0].Spec.Spec.Description += fmt.Sprintf("\n- %s: %s", element.Value, element.Name)
+						} else {
+							param[0].Spec.Spec.Description += fmt.Sprintf("\n- %d: %s", conv.Int(element.Value), element.Name)
+						}
+
 					}
 				})
 
