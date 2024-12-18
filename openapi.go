@@ -632,6 +632,7 @@ func (oa *OpenAPI) AddObjectSchema(field *astp.Element, prop *spec.RefOrSpec[spe
 			prop, _, _ := oa.NewProp(field)
 			t := field.GetTag()
 			fname := t.Get(tag)
+			fname = strings.TrimSuffix(fname, ",omitempty")
 			if fname == "-" {
 				return
 			}
@@ -703,6 +704,7 @@ func (oa *OpenAPI) handleParam(pf *astp.Element) {
 
 			t := field.GetTag()
 			fname := t.Get("json")
+			fname = strings.TrimSuffix(fname, ",omitempty")
 			if fname == "-" {
 				return
 			}
@@ -879,6 +881,7 @@ func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Ex
 			sch1, _, _ := oa.NewProp(element)
 			t := element.GetTag()
 			name := t.Get("json")
+			name = strings.TrimSuffix(name, ",omitempty")
 			if name == "-" {
 				return
 			}
@@ -900,6 +903,7 @@ func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Ex
 			sch1, _, _ := oa.NewProp(element)
 			t := element.GetTag()
 			name := t.Get("json")
+			name = strings.TrimSuffix(name, ",omitempty")
 			if name == "-" {
 				return
 			}
@@ -991,6 +995,7 @@ func (oa *OpenAPI) handleResults(pf *astp.Element) {
 
 		t := field.GetTag()
 		fname := t.Get("json")
+		fname = strings.TrimSuffix(fname, ",omitempty")
 		if fname == "-" {
 			return
 		}
