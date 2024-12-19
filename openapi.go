@@ -873,7 +873,7 @@ func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Ex
 	} else if strings.Contains(field.TypeString, "Time") {
 		v1 = spec.NewSingleOrArray[string]("string")
 		prop.Spec.Format = "date" // or date-time
-	} else if field.ItemType == astp.ElementStruct && field.Item != nil && field.Item.ElementType == astp.ElementStruct && !field.IsItemSlice && !strings.HasPrefix(field.TypeString, "[]") {
+	} else if (field.Item != nil && field.ItemType == astp.ElementStruct) && field.Item.ElementType == astp.ElementStruct && !field.IsItemSlice && !strings.HasPrefix(field.TypeString, "[]") {
 		// 如果此字段为结构体
 		v1 = spec.NewSingleOrArray[string]("object")
 		sch := oa.NewObjectSchema(field.Comment)
@@ -892,6 +892,24 @@ func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Ex
 		})
 		prop.Spec = sch.Spec
 
+	} else if field.ElementType == astp.ElementStruct && !field.IsItemSlice && !strings.HasPrefix(field.TypeString, "[]") {
+		// 如果此字段为结构体
+		v1 = spec.NewSingleOrArray[string]("object")
+		sch := oa.NewObjectSchema(field.Comment)
+		field.Item.VisitElementsAll(astp.ElementField, func(element *astp.Element) {
+			sch1, _, _ := oa.NewProp(element)
+			t := element.GetTag()
+			name := t.Get("json")
+			name = strings.TrimSuffix(name, ",omitempty")
+			if name == "-" {
+				return
+			}
+			if name == "" {
+				name = element.Name
+			}
+			sch.Spec.Properties[name] = sch1
+		})
+		prop.Spec = sch.Spec
 	} else if field.ItemType == astp.ElementStruct && field.Item != nil && field.Item.ElementType == astp.ElementStruct && (field.IsItemSlice || strings.HasPrefix(field.TypeString, "[]")) {
 		//如果字段为切片
 		v1 = spec.NewSingleOrArray[string]("array") //标记type为array
@@ -914,6 +932,27 @@ func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Ex
 		})
 		prop.Spec = sch.Spec
 
+	} else if field.ElementType == astp.ElementStruct && (field.IsItemSlice || strings.HasPrefix(field.TypeString, "[]")) {
+		//如果字段为切片
+		v1 = spec.NewSingleOrArray[string]("array") //标记type为array
+		sch := oa.NewObjectSchema(field.Comment)
+		sch.Spec.Items = spec.NewBoolOrSchema(true, nil)
+		sch.Spec.Items.Schema = spec.NewSchemaSpec()
+		sch.Spec.Items.Schema.Spec.Properties = make(map[string]*spec.RefOrSpec[spec.Schema])
+		field.Item.VisitElementsAll(astp.ElementField, func(element *astp.Element) {
+			sch1, _, _ := oa.NewProp(element)
+			t := element.GetTag()
+			name := t.Get("json")
+			name = strings.TrimSuffix(name, ",omitempty")
+			if name == "-" {
+				return
+			}
+			if name == "" {
+				name = element.Name
+			}
+			sch.Spec.Items.Schema.Spec.Properties[name] = sch1
+		})
+		prop.Spec = sch.Spec
 	} else {
 		if strings.HasPrefix(field.TypeString, "[]") {
 			v1 = spec.NewSingleOrArray[string]("array")
