@@ -486,12 +486,29 @@ func (oa *OpenAPI) HandleStructs(ctl *astp.Element) {
 				return
 			}
 			oa.handleResults(element)
-			//fmt.Println(element.String())
 			oa.Log("results", "add 200 object ")
-			schemaName := element.ElementString
+			schemaName := element.TypeString
 			if schemaName == "" {
 				schemaName = element.Item.TypeString
 			}
+			if element.Item.Generic() {
+				typeParamName := "T"
+				element.VisitElements(astp.ElementGeneric, func(element *astp.Element) bool {
+					return true
+				}, func(element *astp.Element) {
+					typeParamName = element.Name
+				})
+				element.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
+					return !element.Private() && element.Item != nil && element.Item.Name == typeParamName
+				}, func(field *astp.Element) {
+					schemaName += field.Item.Name
+					if field.IsItemSlice {
+						schemaName += "List"
+					}
+
+				})
+			}
+
 			if element.IsItemSlice {
 				resp := oa.NewArrayObjectResponse(schemaName, "success", "application/json")
 				op.Spec.Responses.Spec.Response["200"] = resp
@@ -819,61 +836,21 @@ func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Ex
 	var arr bool
 	// 如果是文本类型
 	if strings.Contains(field.TypeString, "string") {
-		switch field.TypeString {
-		case "[]string":
-			v1 = spec.NewSingleOrArray[string]("array")
-			prop.Spec.Items = spec.NewBoolOrSchema(true, nil)
-			prop.Spec.Items.Schema = spec.NewSchemaSpec()
-			tt := spec.NewSingleOrArray[string]("string")
-			prop.Spec.Items.Schema.Spec.Type = &tt
-			arr = true
-		case "string":
-			v1 = spec.NewSingleOrArray[string]("string")
-		}
+		arr, v1 = oa.NewStringProp(prop, field.TypeString)
 	} else if strings.Contains(field.TypeString, "int") {
-		v1 = spec.NewSingleOrArray[string]("integer")
-		switch field.TypeString {
-		case "int":
-			prop.Spec.Format = "int32"
-		case "int64":
-			prop.Spec.Format = "int64"
-		case "[]int":
-			v1 = spec.NewSingleOrArray[string]("array")
-			prop.Spec.Items = spec.NewBoolOrSchema(true, nil)
-			prop.Spec.Items.Schema = spec.NewSchemaSpec()
-			tt := spec.NewSingleOrArray[string]("integer")
-			prop.Spec.Items.Schema.Spec.Type = &tt
-			prop.Spec.Items.Schema.Spec.Format = "int32"
-			arr = true
-		case "[]int64":
-			v1 = spec.NewSingleOrArray[string]("array")
-			prop.Spec.Items = spec.NewBoolOrSchema(true, nil)
-			prop.Spec.Items.Schema = spec.NewSchemaSpec()
-			tt := spec.NewSingleOrArray[string]("integer")
-			prop.Spec.Items.Schema.Spec.Type = &tt
-			prop.Spec.Items.Schema.Spec.Format = "int64"
-			arr = true
-		}
+		arr, v1 = oa.NewIntProp(prop, field.TypeString)
 	} else if strings.Contains(field.TypeString, "float") {
-		v1 = spec.NewSingleOrArray[string]("number")
-		switch field.TypeString {
-		case "float32", "float64":
-			prop.Spec.Format = "float"
-		case "[]float32", "[]float64":
-			v1 = spec.NewSingleOrArray[string]("array")
-			prop.Spec.Items = spec.NewBoolOrSchema(true, nil)
-			prop.Spec.Items.Schema = spec.NewSchemaSpec()
-			tt := spec.NewSingleOrArray[string]("number")
-			prop.Spec.Items.Schema.Spec.Type = &tt
-			prop.Spec.Items.Schema.Spec.Format = "float"
-			arr = true
-		}
+		arr, v1 = oa.NewFloatProp(prop, field.TypeString)
 	} else if strings.Contains(field.TypeString, "bool") {
 		v1 = spec.NewSingleOrArray[string]("boolean")
 	} else if strings.Contains(field.TypeString, "Time") {
 		v1 = spec.NewSingleOrArray[string]("string")
 		prop.Spec.Format = "date" // or date-time
-	} else if (field.Item != nil && field.ItemType == astp.ElementStruct) && field.Item.ElementType == astp.ElementStruct && !field.IsItemSlice && !strings.HasPrefix(field.TypeString, "[]") {
+
+	} else if (field.Item != nil && field.ItemType == astp.ElementStruct) &&
+		field.Item.ElementType == astp.ElementStruct &&
+		!field.IsItemSlice &&
+		!strings.HasPrefix(field.TypeString, "[]") {
 		// 如果此字段为结构体
 		v1 = spec.NewSingleOrArray[string]("object")
 		sch := oa.NewObjectSchema(field.Comment)
@@ -932,7 +909,7 @@ func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Ex
 		})
 		prop.Spec = sch.Spec
 
-	} else if field.ElementType == astp.ElementStruct && (field.IsItemSlice || strings.HasPrefix(field.TypeString, "[]")) {
+	} else if (field.ElementType == astp.ElementStruct) && (field.IsItemSlice || strings.HasPrefix(field.TypeString, "[]")) {
 		//如果字段为切片
 		v1 = spec.NewSingleOrArray[string]("array") //标记type为array
 		sch := oa.NewObjectSchema(field.Comment)
@@ -952,6 +929,46 @@ func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Ex
 			}
 			sch.Spec.Items.Schema.Spec.Properties[name] = sch1
 		})
+		prop.Spec = sch.Spec
+	} else if (field.ElementType == astp.ElementField || field.ItemType == astp.ElementGeneric) && (field.IsItemSlice || strings.HasPrefix(field.TypeString, "[]")) {
+		//如果字段为切片
+		v1 = spec.NewSingleOrArray[string]("array") //标记type为array
+		sch := oa.NewObjectSchema(field.Comment)
+		sch.Spec.Items = spec.NewBoolOrSchema(true, nil)
+		sch.Spec.Items.Schema = spec.NewSchemaSpec()
+		sch.Spec.Items.Schema.Spec.Properties = make(map[string]*spec.RefOrSpec[spec.Schema])
+		if field.Item != nil {
+			field.Item.VisitElementsAll(astp.ElementField, func(element *astp.Element) {
+				sch1, _, _ := oa.NewProp(element)
+				t := element.GetTag()
+				name := t.Get("json")
+				name = strings.TrimSuffix(name, ",omitempty")
+				if name == "-" {
+					return
+				}
+				if name == "" {
+					name = element.Name
+				}
+				sch.Spec.Items.Schema.Spec.Properties[name] = sch1
+			})
+		} else {
+			field.VisitElementsAll(astp.ElementField, func(element *astp.Element) {
+				sch1, _, _ := oa.NewProp(element)
+				t := element.GetTag()
+				name := t.Get("json")
+				name = strings.TrimSuffix(name, ",omitempty")
+				if name == "-" {
+					return
+				}
+				if name == "" {
+					name = element.Name
+				}
+				sch.Spec.Items.Schema.Spec.Properties[name] = sch1
+			})
+		}
+
+		arr = true
+		tmp = true
 		prop.Spec = sch.Spec
 	} else {
 		if strings.HasPrefix(field.TypeString, "[]") {
@@ -1007,17 +1024,35 @@ func (oa *OpenAPI) NewProp(field *astp.Element, param ...*spec.RefOrSpec[spec.Ex
 func (oa *OpenAPI) handleResults(pf *astp.Element) {
 	schemaName := pf.Item.TypeString
 
-	attr := attribute.GetStructAttrByName(pf.Item, schemaName)
+	//attr := attribute.GetStructAttrByName(pf.Item, schemaName)
 	schemaName = pf.TypeString
 	if schemaName == "" {
 		schemaName = pf.Item.TypeString
 	}
-	var v string
-	if attr != nil {
-		v = attr.Value
-	} else {
-		v = schemaName
+	if pf.Item.Generic() {
+		typeParamName := "T"
+		pf.VisitElements(astp.ElementGeneric, func(element *astp.Element) bool {
+			return true
+		}, func(element *astp.Element) {
+			typeParamName = element.Name
+		})
+		pf.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
+			return !element.Private() && element.Item != nil && element.Item.Name == typeParamName
+		}, func(field *astp.Element) {
+			schemaName += field.Item.Name
+			if field.IsItemSlice {
+				schemaName += "List"
+			}
+
+		})
+		//fmt.Println(schemaName)
 	}
+	var v string = schemaName
+	//if attr != nil {
+	//	v = attr.Value
+	//} else {
+	//	v = schemaName
+	//}
 	sch := oa.NewObjectSchema(v) // create components
 	pf.Item.VisitElements(astp.ElementField, func(element *astp.Element) bool {
 		return !element.Private()
@@ -1028,7 +1063,13 @@ func (oa *OpenAPI) handleResults(pf *astp.Element) {
 		}
 		prop, tmp, _ := oa.NewProp(field)
 		if tmp {
-			sch1 := oa.AddObjectSchema(field, prop, "json")
+			var sch1 *spec.RefOrSpec[spec.Schema]
+			if field.IsItemSlice {
+				sch1 = oa.AddArraySchema(field, prop, "json")
+			} else {
+				sch1 = oa.AddObjectSchema(field, prop, "json")
+			}
+
 			oa.Spec.Components.Spec.Schemas[name] = sch1
 		}
 
