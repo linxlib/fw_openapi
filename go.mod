@@ -1,20 +1,14 @@
 module github.com/linxlib/fw_openapi
 
-go 1.23.0
+go 1.24
 
 require (
 	github.com/gookit/goutil v0.6.18
-	github.com/linxlib/astp v0.3.2
+	github.com/linxlib/astp v0.4.0
 	github.com/linxlib/conv v1.1.1
-	github.com/linxlib/fw v0.6.2
+	github.com/linxlib/fw v0.7.0
 	github.com/pterm/pterm v0.12.81
 	github.com/sv-tools/openapi v1.1.0
-	gopkg.in/yaml.v3 v3.0.1
-)
-
-replace (
-	github.com/linxlib/astp => ../../linxlib/astp
-	github.com/linxlib/fw => ../../repos/fw
 )
 
 require (
@@ -31,7 +25,6 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/linxlib/config v0.2.6 // indirect
-	github.com/linxlib/inject v0.1.3 // indirect
 	github.com/lithammer/fuzzysearch v1.1.8 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect

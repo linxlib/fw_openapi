@@ -8,6 +8,7 @@ import (
 	spec "github.com/sv-tools/openapi"
 	"reflect"
 	"strings"
+	"time"
 )
 
 func (oa *OpenAPI) getTagByName(tag reflect.StructTag, name string, tagName string) string {
@@ -33,11 +34,25 @@ func (oa *OpenAPI) NewParentFieldProp(f *types.Struct, tagName string) map[strin
 	}, func(field *types.Field) {
 		fieldName := field.Name
 		fieldName = oa.getTagByName(field.GetTag(), fieldName, tagName)
+		//TODO: 考虑多层嵌套的情况
+		// 处理隐式导入的字段
+		if fieldName == "-" || field.Name == constants.EmptyName {
+			if field.Name == constants.EmptyName {
+				fields1 := oa.NewParentFieldProp(field.Struct, tagName)
+				for s, s2 := range fields1 {
+					fields[s] = s2
+				}
+				return
+			}
+			return
+		}
+
 		defaultValue := ""
 		defaultValue = oa.getTagByName(field.GetTag(), defaultValue, "default")
 		comment := oa.getComment(field.Comment)
 		example := ""
 		example = oa.getTagByName(field.GetTag(), example, "example")
+
 		fieldSchema := oa.NewFieldProp(field, tagName, defaultValue, comment, example)
 		fields[fieldName] = fieldSchema
 	})
@@ -46,48 +61,103 @@ func (oa *OpenAPI) NewParentFieldProp(f *types.Struct, tagName string) map[strin
 }
 
 func (oa *OpenAPI) NewFieldProp(f *types.Field,
-	tagName string, defaultValue string, comment string, example string) *spec.RefOrSpec[spec.Schema] {
+	tagName string, defaultValue string, comment string, exampleValue string) *spec.RefOrSpec[spec.Schema] {
 
 	typeString := f.Type
+	var defVal, exampleVal any = defaultValue, exampleValue
 	isObject := false
 	isBinary := false
 	format := ""
-	builder := spec.NewSchemaBuilder()
 
 	if strings.Contains(typeString, "Decimal") {
 		typeString = "number"
+		defVal = 0.0
+		exampleVal = 0.0
 	} else {
 		switch typeString {
 		case "string":
 			typeString = "string"
+			defVal = defaultValue
+			exampleVal = exampleValue
 		case "int", "int64", "uint", "uint64", "uint32", "int32":
 			typeString = "integer"
 			format = typeString
+			if defaultValue == "" {
+				defVal = 0
+			} else {
+				defVal = conv.Int(defaultValue)
+			}
+			if exampleValue == "" {
+				exampleVal = 0
+			} else {
+				exampleVal = conv.Int(exampleValue)
+			}
 		case "bool":
 			typeString = "boolean"
+			if defaultValue == "" {
+				defVal = false
+			} else {
+				defVal = conv.Bool(defaultValue)
+			}
+			if exampleValue == "" {
+				exampleVal = false
+			} else {
+				exampleVal = conv.Bool(exampleValue)
+			}
 		case "float32", "float64":
 			typeString = "number"
+			if defaultValue == "" {
+				defVal = 0.00
+			} else {
+				defVal = conv.Float64(defaultValue)
+			}
+			if exampleValue == "" {
+				exampleVal = 0.00
+			} else {
+				exampleVal = conv.Float64(exampleValue)
+			}
 		case "Time":
 			typeString = "string"
 			format = "date-time"
+			if defaultValue == "" {
+				defVal = time.Now().Format("2006-01-02 15:04:05")
+			}
+			if exampleValue == "" {
+				exampleVal = time.Now().Format("2006-01-02 15:04:05")
+			}
 		case "FileHeader":
 			typeString = "string"
 			isBinary = true
 			format = "binary"
 			isObject = true
+			defVal = ""
+			exampleVal = ""
 		default:
 			isObject = true
 		}
 	}
-
+	builder := spec.NewSchemaBuilder()
 	if f.Slice {
 		var schema *spec.RefOrSpec[spec.Schema]
 		if isObject {
 			schema = oa.NewObjectProp(f.Struct, tagName)
 		} else {
-			schema = builder.Type(typeString).GoType(f.Type).Default(defaultValue).Example(example).Description(comment).Build()
+			builder1 := spec.NewSchemaBuilder()
+			builder1.Type(typeString)
+			if comment != "" {
+				builder1.Comment(comment)
+			}
+			if defVal != "" {
+				builder1.Default(defVal)
+			}
+			if exampleVal != "" {
+				builder1.Example(exampleVal)
+			}
+			schema = builder1.Build()
+
 		}
 		builder.Type("array").Items(spec.NewBoolOrSchema(schema))
+
 	} else {
 		if isObject {
 			var schema *spec.RefOrSpec[spec.Schema]
@@ -99,7 +169,13 @@ func (oa *OpenAPI) NewFieldProp(f *types.Field,
 
 			return schema
 		} else {
-			builder.Type(typeString).GoType(typeString).Default(defaultValue).Example(example).Description(comment)
+			builder.Type(typeString).GoType(typeString).Description(comment)
+			if defVal != "" {
+				builder.Default(defVal)
+			}
+			if exampleVal != "" {
+				builder.Example(exampleVal)
+			}
 		}
 
 	}
@@ -133,6 +209,7 @@ func (oa *OpenAPI) NewObjectProp(f *types.Struct, tagName string) *spec.RefOrSpe
 		}, func(field *types.Field) {
 			fieldName := field.Name
 			fieldName = oa.getTagByName(field.GetTag(), fieldName, tagName)
+			// 处理隐式导入的字段
 			if fieldName == "-" || field.Name == constants.EmptyName {
 				if field.Name == constants.EmptyName {
 					fields := oa.NewParentFieldProp(field.Struct, tagName)
@@ -143,6 +220,7 @@ func (oa *OpenAPI) NewObjectProp(f *types.Struct, tagName string) *spec.RefOrSpe
 				}
 				return
 			}
+
 			defaultValue := ""
 			defaultValue = oa.getTagByName(field.GetTag(), defaultValue, "default")
 			comment := oa.getComment(field.Comment)
@@ -150,11 +228,17 @@ func (oa *OpenAPI) NewObjectProp(f *types.Struct, tagName string) *spec.RefOrSpe
 			example = oa.getTagByName(field.GetTag(), example, "example")
 			//
 			if field.Parent && field.Struct != nil {
-				fields := oa.NewParentFieldProp(field.Struct, tagName)
-				builder.Properties(fields)
-			} else {
+				if field.Generic {
+					schema := oa.NewFieldProp(field, tagName, defaultValue, comment, example)
+					builder.AddProperty(fieldName, schema)
+				} else {
+					fields := oa.NewParentFieldProp(field.Struct, tagName)
+					builder.Properties(fields)
+				}
 
+			} else {
 				schema := oa.NewFieldProp(field, tagName, defaultValue, comment, example)
+
 				builder.AddProperty(fieldName, schema)
 			}
 

@@ -212,15 +212,22 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 		//params
 		method.VisitParams(func(element *types.Param) {
 			//oa.Log("params", element.TypeName)
+
 			if element.Struct == nil {
 				return
 			}
-			oa.handleParam(element)
+
+			if !oa.handleParam(element) {
+				return
+			}
+
 			attr := element.Struct.GetAttr()
 			switch attr {
 			case constants.AT_BODY, constants.AT_JSON:
+
 				body := spec.NewRequestBodyBuilder()
 				body.Required(true)
+
 				schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + element.Struct.TypeName).Build()
 				mediaType := spec.NewMediaTypeBuilder().Schema(schema).Build()
 				body.Description("请求body").AddContent("application/json", mediaType)
@@ -282,7 +289,7 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 			oa.handleResults(element)
 			if element.Struct != nil {
 				mediaType := spec.NewMediaTypeBuilder()
-				schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + element.Struct.TypeName).Build()
+				schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + element.TypeName).Build()
 				mediaType.Schema(schema)
 				response.Description("success").AddContent("application/json", mediaType.Build())
 			} else {
@@ -301,6 +308,7 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 			}
 
 		})
+
 		//oa.OpenAPIBuilder.AddComponent("success", response.Build())
 		op1 := op.Build()
 		op1.Spec.Responses = new(spec.Extendable[spec.Responses])
@@ -309,6 +317,7 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 			"200":     response.Build(),
 			"not 200": errResponse.Build(),
 		}
+
 		switch m {
 		case "GET":
 			path.Get(op1)
@@ -325,16 +334,16 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 		}
 
 		oa.OpenAPIBuilder.AddPath(route, path.Build())
-
 	})
 }
 
 // handleParam
 // 将参数对应的类型注册到components.schemas中
-func (oa *OpenAPI) handleParam(pf *types.Param) {
+func (oa *OpenAPI) handleParam(pf *types.Param) bool {
 	if pf.Struct == nil {
-		return
+		return false
 	}
+
 	attr := pf.Struct.GetAttr()
 	switch attr {
 	case constants.AT_BODY, constants.AT_JSON:
@@ -359,9 +368,9 @@ func (oa *OpenAPI) handleParam(pf *types.Param) {
 		op := oa.NewObjectProp(pf.Struct, "multipart")
 		oa.OpenAPIBuilder.AddComponent(name, op)
 	default:
-
+		return false
 	}
-
+	return true
 }
 
 func (oa *OpenAPI) handleResults(pf *types.Param) {
@@ -369,7 +378,13 @@ func (oa *OpenAPI) handleResults(pf *types.Param) {
 		return
 	}
 	schema := oa.NewObjectProp(pf.Struct, "json")
-	oa.OpenAPIBuilder.AddComponent(pf.TypeName, schema)
+	if pf.Slice {
+		schema1 := spec.NewSchemaBuilder().Type("array").Items(spec.NewBoolOrSchema(schema)).Build()
+		oa.OpenAPIBuilder.AddComponent(pf.TypeName, schema1)
+	} else {
+		oa.OpenAPIBuilder.AddComponent(pf.TypeName, schema)
+	}
+
 }
 
 func (oa *OpenAPI) Print(slot string) {
