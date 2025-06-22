@@ -217,9 +217,7 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 				return
 			}
 
-			if !oa.handleParam(element) {
-				return
-			}
+			oa.handleParam(element)
 
 			attr := element.Struct.GetAttr()
 			switch attr {
@@ -241,9 +239,13 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 				op.AddParameters(ps...)
 
 			case constants.AT_MULTIPART:
+
 				body := spec.NewRequestBodyBuilder()
 				body.Required(true)
-				schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + element.Struct.TypeName).Build()
+				schema := oa.NewObjectProp(element.Struct, "multipart")
+
+				//schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + element.Struct.TypeName).Build()
+
 				mediaType := spec.NewMediaTypeBuilder().Schema(schema).Build()
 				body.Description("请求body").AddContent("multipart/form-data", mediaType)
 				op.RequestBody(body.Build())
@@ -251,7 +253,8 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 			case constants.AT_FORM:
 				body := spec.NewRequestBodyBuilder()
 				body.Required(true)
-				schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + element.Struct.TypeName).Build()
+				schema := oa.NewObjectProp(element.Struct, "form")
+				//schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + element.Struct.TypeName).Build()
 				mediaType := spec.NewMediaTypeBuilder().Schema(schema).Build()
 				body.Description("请求body").AddContent("application/x-www-form-urlencoded", mediaType)
 				op.RequestBody(body.Build())
@@ -260,8 +263,9 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 				ps := oa.NewObjectParameters(element.Struct, "header")
 				op.Parameters(ps...)
 			case constants.AT_COOKIE:
-				ps := oa.NewObjectParameters(element.Struct, "cookie")
-				op.AddParameters(ps...)
+				break
+				//ps := oa.NewObjectParameters(element.Struct, "cookie")
+				//op.AddParameters(ps...)
 			case constants.AT_XML:
 				body := spec.NewRequestBodyBuilder()
 				body.Required(true)
