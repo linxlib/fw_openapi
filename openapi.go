@@ -91,7 +91,7 @@ func (oa *OpenAPI) InitPlugin(s *fw.Server) {
 	sec.In("header")
 	oa.OpenAPIBuilder.AddComponent("ApiKeyAuth", sec.Build())
 	//oa.Spec.Components.Spec.SecuritySchemes["ApiKeyAuth"] = sec
-
+	oa.OpenAPIBuilder.JsonSchemaDialect("")
 	serverBuilder := spec.NewServerBuilder()
 	serverBuilder.URL(fmt.Sprintf("%s://%s:%d%s", s.Schema(), s.ListenAddr(), s.Port(), s.BasePath()))
 	serverBuilder.Description("FW Server")
@@ -403,7 +403,7 @@ func (oa *OpenAPI) Print(slot string) {
 		style4 := pterm.NewStyle(pterm.FgWhite)
 		style.Print("  ➜ ")
 		style3.Printf("%10s", "ApiDoc: ")
-		r := joinRoute(so.BasePath, "/doc/index.html")
+		r := joinRoute(so.BasePath, "/docs")
 		if oa.s.CanAccessByLan() {
 			style4.Printf("http://%s:%d%s\n", so.IntranetIP, so.Port, r)
 		} else {
@@ -452,6 +452,6 @@ func (oa *OpenAPI) WriteOut() error {
 	if err != nil {
 		return err
 	}
-	openApiMiddleware.SetDocContent(bs)
+	openApiMiddleware.SetDocContent(bs, "application/json")
 	return nil
 }
