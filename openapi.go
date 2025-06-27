@@ -28,7 +28,8 @@ var innerAttrNames = map[string]attribute.AttributeType{
 	"Summary":        attribute.TypeDoc,
 	"TermsOfService": attribute.TypeDoc,
 }
-var openApiMiddleware *middleware.OpenApiMiddleware
+
+//var openApiMiddleware *middleware.OpenApiMiddleware
 
 func init() {
 	for s, attributeType := range innerAttrNames {
@@ -45,7 +46,8 @@ type OpenAPI struct {
 	*spec.OpenAPIBuilder
 	s *fw.Server
 	//fileName string
-	so *fw.ServerOption
+	so                *fw.ServerOption
+	openApiMiddleware *middleware.OpenApiMiddleware
 }
 
 func (oa *OpenAPI) InitPlugin(s *fw.Server) {
@@ -98,8 +100,8 @@ func (oa *OpenAPI) InitPlugin(s *fw.Server) {
 	oa.OpenAPIBuilder.Servers(serverBuilder.Build())
 	oa.so = new(fw.ServerOption)
 	oa.s.Provide(oa.so)
-	openApiMiddleware = middleware.NewOpenApiMiddleware(hasLicenseFile, licenseFileContent)
-	s.Use(openApiMiddleware)
+	oa.openApiMiddleware = middleware.NewOpenApiMiddleware(hasLicenseFile, licenseFileContent)
+	s.Use(oa.openApiMiddleware)
 }
 
 func joinRoute(base string, r string) string {
@@ -404,11 +406,11 @@ func (oa *OpenAPI) Print(slot string) {
 		style.Print("  ➜ ")
 		style3.Printf("%10s", "ApiDoc: ")
 		r := joinRoute(so.BasePath, "/docs")
+		s1 := fmt.Sprintf("http://%s:%d%s -> %s \n", oa.s.ListenAddr(), oa.s.Port(), r, oa.openApiMiddleware.GetDocType())
 		if oa.s.CanAccessByLan() {
-			style4.Printf("http://%s:%d%s\n", so.IntranetIP, so.Port, r)
-		} else {
-			style4.Printf("http://%s:%d%s\n", oa.s.ListenAddr(), oa.s.Port(), r)
+			s1 = fmt.Sprintf("http://%s:%d%s -> %s\n", so.IntranetIP, so.Port, r, oa.openApiMiddleware.GetDocType())
 		}
+		style4.Print(s1)
 
 	}
 }
@@ -418,33 +420,39 @@ func quoted(s string) string {
 }
 
 func (oa *OpenAPI) HandleServerInfo(si []*types.Comment) {
-	//for _, attr := range si {
-	//	if attr.AttrType == constants.AT_CUSTOM {
-	//		switch strings.ToLower(attr.CustomAttr) {
-	//		case "title":
-	//			oa.OpenAPIBuilder.In
-	//		case "license":
-	//			strs := strings.SplitN(attr.AttrValue, " ", 3)
-	//			oa.Spec.Info.Spec.License.Spec.Name = strs[0]
-	//			oa.Spec.Info.Spec.License.Spec.URL = strs[1]
-	//			oa.Spec.Info.Spec.License.Spec.Identifier = strs[2]
-	//		case "description":
-	//			oa.Spec.Info.Spec.Description = quoted(attr.AttrValue)
-	//		case "contact":
-	//			strs := strings.SplitN(attr.AttrValue, " ", 3)
-	//			oa.Spec.Info.Spec.Contact.Spec.Name = strs[0]
-	//			oa.Spec.Info.Spec.Contact.Spec.URL = strs[1]
-	//			oa.Spec.Info.Spec.Contact.Spec.Email = strs[2]
-	//		case "version":
-	//			oa.Spec.Info.Spec.Version = attr.AttrValue
-	//		case "summary":
-	//			oa.Spec.Info.Spec.Summary = attr.AttrValue
-	//		case "termsofservice":
-	//			oa.Spec.Info.Spec.TermsOfService = attr.AttrValue
-	//		}
-	//
-	//	}
-	//}
+	info := spec.NewInfoBuilder()
+	for _, attr := range si {
+		if attr.AttrType == constants.AT_CUSTOM {
+			switch strings.ToLower(attr.CustomAttr) {
+			case "title":
+				info.Title(attr.AttrValue)
+			case "license":
+				strs := strings.SplitN(attr.AttrValue, " ", 3)
+				l := spec.NewLicenseBuilder()
+				l.Name(strs[0])
+				l.URL(strs[1])
+				l.Identifier(strs[2])
+				info.License(l.Build())
+			case "description":
+				info.Description(quoted(attr.AttrValue))
+			case "contact":
+				strs := strings.SplitN(attr.AttrValue, " ", 3)
+				contact := spec.NewContactBuilder()
+				contact.Name(strs[0])
+				contact.URL(strs[1])
+				contact.Email(strs[2])
+				info.Contact(contact.Build())
+			case "version":
+				info.Version(attr.AttrValue)
+			case "summary":
+				info.Summary(attr.AttrValue)
+			case "termsofservice":
+				info.TermsOfService(attr.AttrValue)
+			}
+
+		}
+	}
+	oa.OpenAPIBuilder.Info(info.Build())
 }
 
 func (oa *OpenAPI) WriteOut() error {
@@ -452,6 +460,6 @@ func (oa *OpenAPI) WriteOut() error {
 	if err != nil {
 		return err
 	}
-	openApiMiddleware.SetDocContent(bs, "application/json")
+	oa.openApiMiddleware.SetDocContent(bs, "application/json")
 	return nil
 }

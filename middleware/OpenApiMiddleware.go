@@ -2,18 +2,13 @@ package middleware
 
 import (
 	"github.com/linxlib/fw"
+	"github.com/savsgio/gotils/strings"
 )
 
 import "embed"
 
-//go:embed swagger/*
+//go:embed docs/*
 var FS embed.FS
-
-//go:embed rapi/*
-var RAPIFS embed.FS
-
-//go:embed openapi-ui/*
-var UIFS embed.FS
 
 func NewOpenApiMiddleware(hasLicenseFile bool, licenseFileContent []byte) *OpenApiMiddleware {
 	return &OpenApiMiddleware{
@@ -25,15 +20,14 @@ func NewOpenApiMiddleware(hasLicenseFile bool, licenseFileContent []byte) *OpenA
 }
 
 type OpenApiOptions struct {
-	Redirect bool `yaml:"redirect" default:"true"` //if redirect /doc to /doc/index.html
-	//Route    string `yaml:"route" default:"doc"`             // the page route of openapi document. e.g. if your want to serve document at /docA/index.html, just set route to docA
-	FileName string `yaml:"fileName" default:"openapi.json"` //file path refer to openapi.yaml or openapi.json
-	Type     string `yaml:"type" default:"swagger"`             //ui type. swagger\rapi\openapi-ui
+	Open bool   `yaml:"open" default:"false"`   // open browser
+	Type string `yaml:"type" default:"swagger"` //ui type. swagger\rapi\openapi-ui
 }
 
 type OpenApiMiddleware struct {
 	*fw.MiddlewareGlobal
 	options            *OpenApiOptions
+	isProd             bool
 	hasLicenseFile     bool
 	licenseFileContent []byte
 	docContent         []byte
@@ -50,12 +44,12 @@ func (o *OpenApiMiddleware) DoInitOnce() {
 
 func (o *OpenApiMiddleware) Router(ctx *fw.MiddlewareContext) []*fw.RouteItem {
 	ris := make([]*fw.RouteItem, 0)
-	if o.options.Redirect {
+	if !o.isProd {
 		ris = append(ris, &fw.RouteItem{
 			Method: "GET",
-			Path:   "/doc/",
+			Path:   "/",
 			H: func(context *fw.Context) {
-				context.Redirect(302, "index.html")
+				context.Redirect(302, "docs")
 			},
 			Middleware: o,
 		})
@@ -63,7 +57,7 @@ func (o *OpenApiMiddleware) Router(ctx *fw.MiddlewareContext) []*fw.RouteItem {
 	if o.hasLicenseFile {
 		ris = append(ris, &fw.RouteItem{
 			Method: "GET",
-			Path:   "/doc/LICENSE",
+			Path:   "/docs/LICENSE",
 			H: func(context *fw.Context) {
 				context.Data(200, "text/plain", o.licenseFileContent)
 			},
@@ -76,23 +70,11 @@ func (o *OpenApiMiddleware) Router(ctx *fw.MiddlewareContext) []*fw.RouteItem {
 		Path:       "/docs",
 		Middleware: o,
 	}
-	switch o.options.Type {
-	case "swagger":
+	if strings.Include([]string{"swagger", "rapi", "openapi-ui"}, o.options.Type) {
 		ri.H = func(context *fw.Context) {
-			//path := context.GetFastContext().UserValue("any").(string)
-			context.ServeFS(FS, "/swagger/index.html")
+			context.ServeFS(FS, "/docs/"+o.options.Type+".html")
 		}
-	case "rapi":
-		ri.H = func(context *fw.Context) {
-			//path := context.GetFastContext().UserValue("any").(string)
-			context.ServeFS(RAPIFS, "/rapi/index.html")
-		}
-	case "openapi-ui":
-		ri.H = func(context *fw.Context) {
-			//path := context.GetFastContext().UserValue("any").(string)
-			context.ServeFS(UIFS, "/openapi-ui/index.html")
-		}
-	default:
+	} else {
 		ri.H = func(context *fw.Context) {
 			context.String(404, "Not Found")
 		}
@@ -106,21 +88,13 @@ func (o *OpenApiMiddleware) Router(ctx *fw.MiddlewareContext) []*fw.RouteItem {
 		},
 		Middleware: o,
 	})
-	ris = append(ris, &fw.RouteItem{
-		Method: "GET",
-		Path:   "/css/index.css",
-		H: func(context *fw.Context) {
-			context.ServeFS(FS, "/swagger/index.css")
-		},
-		Middleware: o,
-	})
-	ris = append(ris, &fw.RouteItem{
-		Method: "GET",
-		Path:   "/js/swagger-initializer.js",
-		H: func(context *fw.Context) {
-			context.ServeFS(FS, "/swagger/swagger-initializer.js")
-		},
-		Middleware: o,
-	})
+	
 	return ris
+}
+
+func (o *OpenApiMiddleware) GetDocType() string {
+	return o.options.Type
+}
+func (o *OpenApiMiddleware) SetMode(isProd bool) {
+	o.isProd = isProd
 }
