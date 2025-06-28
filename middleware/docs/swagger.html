@@ -32,19 +32,22 @@
     <script>
       window.onload = function() {
         //<editor-fold desc="Changeable Configuration Block">
-        console.log('docs ui v5.18.2')
+        console.log('swagger ui v5.18.2')
         // the following lines will be replaced by docker/configurator, when it runs in a docker-container
         window.ui = SwaggerUIBundle({
-          url: "/openapi.json",
+          // url: "/openapi.json",
+          configUrl: "/docs/config",
           dom_id: '#swagger-ui',
           deepLinking: true,
           docExpansion: 'none',
+          queryConfigEnabled: true,
           presets: [
             SwaggerUIBundle.presets.apis,
             SwaggerUIStandalonePreset
           ],
           plugins: [
-            SwaggerUIBundle.plugins.DownloadUrl
+            SwaggerUIBundle.plugins.DownloadUrl,
+            SwaggerUIBundle.plugins.Topbar
           ],
           layout: "StandaloneLayout",
           syntaxHighlight: {
@@ -52,7 +55,8 @@
             theme: 'monokai'
           },
           validatorUrl: 'none',
-          tryItOutEnabled: true
+          tryItOutEnabled: true,
+          displayRequestDuration: true
         });
 
         //</editor-fold>

@@ -43,27 +43,39 @@ func NewOpenAPIPlugin() *OpenAPI {
 }
 
 type OpenAPI struct {
-	*spec.OpenAPIBuilder
-	s *fw.Server
+	builders map[string]*spec.OpenAPIBuilder
+	s        *fw.Server
 	//fileName string
 	so                *fw.ServerOption
 	openApiMiddleware *middleware.OpenApiMiddleware
+	infoBuilder       *spec.InfoBuilder
+	securityBuilder   *spec.SecuritySchemeBuilder
+	serverBuilder     *spec.ServerBuilder
 }
 
+func (oa *OpenAPI) getCurrentGroup(name string) *spec.OpenAPIBuilder {
+	if _, ok := oa.builders[name]; !ok {
+		oa.builders[name] = spec.NewOpenAPIBuilder()
+		oa.builders[name].OpenAPI("3.1.0")
+		oa.builders[name].JsonSchemaDialect("")
+	}
+	return oa.builders[name]
+}
 func (oa *OpenAPI) InitPlugin(s *fw.Server) {
 	oa.s = s
 	hasLicenseFile := fsutil.FileExist("LICENSE")
-	oa.OpenAPIBuilder = spec.NewOpenAPIBuilder()
-	oa.OpenAPIBuilder.OpenAPI("3.1.0")
-	info := spec.NewInfoBuilder()
-	info.Title("FW - OpenAPI 3.0")
-	info.Description("")
-	info.TermsOfService("https://github.com/linxlib/fw")
+	oa.builders = make(map[string]*spec.OpenAPIBuilder)
+	oa.infoBuilder = spec.NewInfoBuilder()
+	oa.securityBuilder = spec.NewSecuritySchemeBuilder()
+	oa.serverBuilder = spec.NewServerBuilder()
+	oa.infoBuilder.Title("FW - OpenAPI 3.0")
+	oa.infoBuilder.Description("")
+	oa.infoBuilder.TermsOfService("https://github.com/linxlib/fw")
 	contact := spec.NewContactBuilder()
 	contact.Email("email@example.com")
 	contact.Name("fw")
 	contact.URL("https://github.com/linxlib/fw")
-	info.Contact(contact.Build())
+	oa.infoBuilder.Contact(contact.Build())
 	license := spec.NewLicenseBuilder()
 	license.Name("MIT License")
 	license.URL("https://opensource.org/license/MIT")
@@ -83,21 +95,23 @@ func (oa *OpenAPI) InitPlugin(s *fw.Server) {
 		license.URL("https://opensource.org/license/MIT")
 	}
 
-	info.License(license.Build())
-	info.Version("1.0.0@beta")
-	oa.OpenAPIBuilder.Info(info.Build())
+	oa.infoBuilder.License(license.Build())
+	oa.infoBuilder.Version("1.0.0@beta")
+	//oa.builders["app"].Info(info.Build())
 
-	sec := spec.NewSecuritySchemeBuilder()
-	sec.Name("Authorization")
-	sec.Type("apiKey")
-	sec.In("header")
-	oa.OpenAPIBuilder.AddComponent("ApiKeyAuth", sec.Build())
+	//sec := spec.NewSecuritySchemeBuilder()
+	oa.securityBuilder.Name("Authorization")
+	oa.securityBuilder.Type("apiKey")
+	oa.securityBuilder.In("header")
+
+	//oa.builders["app"].AddComponent("ApiKeyAuth", sec.Build())
 	//oa.Spec.Components.Spec.SecuritySchemes["ApiKeyAuth"] = sec
-	oa.OpenAPIBuilder.JsonSchemaDialect("")
-	serverBuilder := spec.NewServerBuilder()
-	serverBuilder.URL(fmt.Sprintf("%s://%s:%d%s", s.Schema(), s.ListenAddr(), s.Port(), s.BasePath()))
-	serverBuilder.Description("FW Server")
-	oa.OpenAPIBuilder.Servers(serverBuilder.Build())
+	//oa.openApiBuilder.JsonSchemaDialect("")
+	//serverBuilder := spec.NewServerBuilder()
+	oa.serverBuilder.URL(fmt.Sprintf("%s://%s:%d%s", s.Schema(), s.ListenAddr(), s.Port(), s.BasePath()))
+	oa.serverBuilder.Description("FW Server")
+	//oa.builders["app"].Servers(serverBuilder.Build())
+
 	oa.so = new(fw.ServerOption)
 	oa.s.Provide(oa.so)
 	oa.openApiMiddleware = middleware.NewOpenApiMiddleware(hasLicenseFile, licenseFileContent)
@@ -133,6 +147,7 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 	allAttrs := ctl.Doc
 	tagName := ""
 	r := ""
+	groupName := "default"
 	desc := ctl.Name
 	isDeprecated := false
 	for _, attr := range allAttrs {
@@ -142,6 +157,8 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 			} else if strings.ToUpper(attr.CustomAttr) == "TAG" {
 				tagName = ctl.Name
 				desc = attr.AttrValue
+			} else if strings.ToUpper(attr.CustomAttr) == "GROUP" {
+				groupName = attr.AttrValue
 			}
 		} else if attr.AttrType == constants.AT_ROUTE {
 			r = attr.AttrValue
@@ -158,7 +175,7 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 		tagName = ctl.Name
 	}
 
-	oa.OpenAPIBuilder.AddTags(oa.NewTag(tagName, quoted(desc)))
+	oa.getCurrentGroup(groupName).AddTags(oa.NewTag(tagName, quoted(desc)))
 
 	ctl.VisitMethods(func(method *types.Function) bool {
 		return !method.Private && method.HasAttrs()
@@ -219,7 +236,7 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 				return
 			}
 
-			oa.handleParam(element)
+			refName := oa.handleParam(element, groupName)
 
 			attr := element.Struct.GetAttr()
 			switch attr {
@@ -228,7 +245,7 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 				body := spec.NewRequestBodyBuilder()
 				body.Required(true)
 
-				schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + element.Struct.TypeName).Build()
+				schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + refName).Build()
 				mediaType := spec.NewMediaTypeBuilder().Schema(schema).Build()
 				body.Description("请求body").AddContent("application/json", mediaType)
 				op.RequestBody(body.Build())
@@ -271,7 +288,7 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 			case constants.AT_XML:
 				body := spec.NewRequestBodyBuilder()
 				body.Required(true)
-				schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + element.Struct.TypeName).Build()
+				schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + refName).Build()
 				mediaType := spec.NewMediaTypeBuilder().Schema(schema).Build()
 				body.Description("请求body").AddContent("application/xml", mediaType)
 				op.RequestBody(body.Build())
@@ -292,10 +309,10 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 		errResponse := spec.NewResponseBuilder()
 		method.VisitResults(func(element *types.Param) {
 			//oa.Log("results", element.TypeName)
-			oa.handleResults(element)
+			refName := oa.handleResults(element, groupName)
 			if element.Struct != nil {
 				mediaType := spec.NewMediaTypeBuilder()
-				schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + element.TypeName).Build()
+				schema := spec.NewSchemaBuilder().Type("object").Ref("#/components/schemas/" + refName).Build()
 				mediaType.Schema(schema)
 				response.Description("success").AddContent("application/json", mediaType.Build())
 			} else {
@@ -339,58 +356,67 @@ func (oa *OpenAPI) HandleStructs(ctl *types.Struct) {
 			path.Get(op1)
 		}
 
-		oa.OpenAPIBuilder.AddPath(route, path.Build())
+		oa.builders[groupName].AddPath(route, path.Build())
 	})
 }
 
 // handleParam
 // 将参数对应的类型注册到components.schemas中
-func (oa *OpenAPI) handleParam(pf *types.Param) bool {
+func (oa *OpenAPI) handleParam(pf *types.Param, groupName string) string {
 	if pf.Struct == nil {
-		return false
+		return ""
 	}
-
+	name := pf.Struct.TypeName
+	name = strings.ReplaceAll(name, "[]", "")
+	name = strings.ReplaceAll(name, "[", "_")
+	name = strings.ReplaceAll(name, "]", "_")
+	name = strings.ReplaceAll(name, "*", "-")
 	attr := pf.Struct.GetAttr()
 	switch attr {
 	case constants.AT_BODY, constants.AT_JSON:
 		// 参数的类型
-		name := pf.Struct.TypeName
+		//name := pf.Struct.TypeName
 		op := oa.NewObjectProp(pf.Struct, "json")
-		oa.OpenAPIBuilder.AddComponent(name, op)
+		oa.builders[groupName].AddComponent(name, op)
 	case constants.AT_XML:
-		name := pf.Struct.TypeName
+		//name := pf.Struct.TypeName
 		op := oa.NewObjectProp(pf.Struct, "xml")
-		oa.OpenAPIBuilder.AddComponent(name, op)
+		oa.builders[groupName].AddComponent(name, op)
 	case constants.AT_YAML:
-		name := pf.Struct.TypeName
+		//name := pf.Struct.TypeName
 		op := oa.NewObjectProp(pf.Struct, "yaml")
-		oa.OpenAPIBuilder.AddComponent(name, op)
-	case constants.AT_FORM:
-		name := pf.Struct.Type
-		op := oa.NewObjectProp(pf.Struct, "form")
-		oa.OpenAPIBuilder.AddComponent(name, op)
-	case constants.AT_MULTIPART:
-		name := pf.Struct.Type
-		op := oa.NewObjectProp(pf.Struct, "multipart")
-		oa.OpenAPIBuilder.AddComponent(name, op)
+		oa.builders[groupName].AddComponent(name, op)
+	//case constants.AT_FORM:
+	//	name := pf.Struct.Type
+	//	op := oa.NewObjectProp(pf.Struct, "form")
+	//	oa.OpenAPIBuilder.AddComponent(name, op)
+	//case constants.AT_MULTIPART:
+	//	name := pf.Struct.Type
+	//	op := oa.NewObjectProp(pf.Struct, "multipart")
+	//	oa.OpenAPIBuilder.AddComponent(name, op)
 	default:
-		return false
+		return ""
 	}
-	return true
+	return name
 }
 
-func (oa *OpenAPI) handleResults(pf *types.Param) {
+func (oa *OpenAPI) handleResults(pf *types.Param, groupName string) string {
 	if pf.Struct == nil {
-		return
+		return ""
 	}
 	schema := oa.NewObjectProp(pf.Struct, "json")
+	name := pf.TypeName
+	name = strings.ReplaceAll(name, "[]", "")
+	name = strings.ReplaceAll(name, "[", "_")
+	name = strings.ReplaceAll(name, "]", "_")
+	name = strings.ReplaceAll(name, "*", "-")
 	if pf.Slice {
 		schema1 := spec.NewSchemaBuilder().Type("array").Items(spec.NewBoolOrSchema(schema)).Build()
-		oa.OpenAPIBuilder.AddComponent(pf.TypeName, schema1)
+		oa.builders[groupName].AddComponent(name, schema1)
 	} else {
-		oa.OpenAPIBuilder.AddComponent(pf.TypeName, schema)
+		oa.builders[groupName].AddComponent(name, schema)
 	}
-
+	return name
 }
 
 func (oa *OpenAPI) Print(slot string) {
@@ -420,46 +446,49 @@ func quoted(s string) string {
 }
 
 func (oa *OpenAPI) HandleServerInfo(si []*types.Comment) {
-	info := spec.NewInfoBuilder()
+	//info := spec.NewInfoBuilder()
 	for _, attr := range si {
 		if attr.AttrType == constants.AT_CUSTOM {
 			switch strings.ToLower(attr.CustomAttr) {
 			case "title":
-				info.Title(attr.AttrValue)
+				oa.infoBuilder.Title(attr.AttrValue)
 			case "license":
 				strs := strings.SplitN(attr.AttrValue, " ", 3)
 				l := spec.NewLicenseBuilder()
 				l.Name(strs[0])
 				l.URL(strs[1])
 				l.Identifier(strs[2])
-				info.License(l.Build())
+				oa.infoBuilder.License(l.Build())
 			case "description":
-				info.Description(quoted(attr.AttrValue))
+				oa.infoBuilder.Description(quoted(attr.AttrValue))
 			case "contact":
 				strs := strings.SplitN(attr.AttrValue, " ", 3)
 				contact := spec.NewContactBuilder()
 				contact.Name(strs[0])
 				contact.URL(strs[1])
 				contact.Email(strs[2])
-				info.Contact(contact.Build())
+				oa.infoBuilder.Contact(contact.Build())
 			case "version":
-				info.Version(attr.AttrValue)
+				oa.infoBuilder.Version(attr.AttrValue)
 			case "summary":
-				info.Summary(attr.AttrValue)
+				oa.infoBuilder.Summary(attr.AttrValue)
 			case "termsofservice":
-				info.TermsOfService(attr.AttrValue)
+				oa.infoBuilder.TermsOfService(attr.AttrValue)
 			}
 
 		}
 	}
-	oa.OpenAPIBuilder.Info(info.Build())
+
 }
 
 func (oa *OpenAPI) WriteOut() error {
-	bs, err := oa.Build().MarshalJSON()
-	if err != nil {
-		return err
+	for groupName, g := range oa.builders {
+		g.Info(oa.infoBuilder.Build())
+		g.AddComponent("ApiAuthKey", oa.securityBuilder.Build())
+		g.Servers(oa.serverBuilder.Build())
+		bs, _ := g.Build().MarshalJSON()
+		oa.openApiMiddleware.SetDocContent(groupName, bs, "application/json")
 	}
-	oa.openApiMiddleware.SetDocContent(bs, "application/json")
+
 	return nil
 }

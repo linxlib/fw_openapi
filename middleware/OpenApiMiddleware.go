@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"github.com/linxlib/conv"
 	"github.com/linxlib/fw"
 	"github.com/savsgio/gotils/strings"
 )
@@ -30,16 +31,56 @@ type OpenApiMiddleware struct {
 	isProd             bool
 	hasLicenseFile     bool
 	licenseFileContent []byte
-	docContent         []byte
-	contentType        string
+	docs               map[string]*doc
+	docConfig          *DocConfig
+}
+type doc struct {
+	docContent  []byte
+	contentType string
 }
 
-func (o *OpenApiMiddleware) SetDocContent(docContent []byte, contentType string) {
-	o.docContent = docContent
-	o.contentType = contentType
+func (o *OpenApiMiddleware) SetDocContent(groupName string, docContent []byte, contentType string) {
+	if o.docs == nil {
+		o.docs = make(map[string]*doc)
+	}
+	o.docs[groupName] = &doc{
+		docContent:  docContent,
+		contentType: contentType,
+	}
+	o.docConfig.Urls = append(o.docConfig.Urls, DocConfigUrl{
+		Name: groupName,
+		URL:  "/openapi.json?urls.primaryName=" + groupName,
+	})
 }
 func (o *OpenApiMiddleware) DoInitOnce() {
 	o.LoadConfig("openapi", o.options)
+	o.docConfig = new(DocConfig)
+	o.docConfig.Urls = make([]DocConfigUrl, 0)
+}
+
+type DocConfig struct {
+	Urls                   []DocConfigUrl `json:"urls,omitempty"`
+	DomId                  string         `json:"dom_id,omitempty"`
+	ValidatorUrl           string         `json:"validatorUrl,omitempty"`
+	DeepLinking            bool           `json:"deepLinking,omitempty"`
+	DocExpansion           string         `json:"docExpansion,omitempty"`
+	QueryConfigEnabled     bool           `json:"queryConfigEnabled,omitempty"`
+	Url                    string         `json:"url,omitempty"`
+	TryItOutEnabled        bool           `json:"tryItOutEnabled,omitempty"`
+	SupportedSubmitMethods []string       `json:"supported_submit_methods,omitempty"`
+	DisplayRequestDuration bool           `json:"displayRequestDuration,omitempty"`
+}
+
+type DocConfigUrl struct {
+	URL  string `json:"url,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+
+type KnifeConfig struct {
+	Name           string `json:"name,omitempty"`
+	URL            string `json:"url,omitempty"`
+	Location       string `json:"location,omitempty"`
+	SwaggerVersion string `json:"swaggerVersion,omitempty"`
 }
 
 func (o *OpenApiMiddleware) Router(ctx *fw.MiddlewareContext) []*fw.RouteItem {
@@ -54,6 +95,14 @@ func (o *OpenApiMiddleware) Router(ctx *fw.MiddlewareContext) []*fw.RouteItem {
 			Middleware: o,
 		})
 	}
+	ris = append(ris, &fw.RouteItem{
+		Method: "GET",
+		Path:   "/docs/config",
+		H: func(context *fw.Context) {
+			context.JSON(200, o.docConfig)
+		},
+		Middleware: o,
+	})
 	if o.hasLicenseFile {
 		ris = append(ris, &fw.RouteItem{
 			Method: "GET",
@@ -84,11 +133,17 @@ func (o *OpenApiMiddleware) Router(ctx *fw.MiddlewareContext) []*fw.RouteItem {
 		Method: "GET",
 		Path:   "/openapi.json",
 		H: func(context *fw.Context) {
-			context.Data(200, o.contentType, o.docContent)
+			//urls.primaryName
+			var primaryName = context.QueryArgs().Peek("urls.primaryName")
+			if primaryName != nil {
+				context.Data(200, o.docs[conv.String(primaryName)].contentType, o.docs[conv.String(primaryName)].docContent)
+			} else {
+				context.Data(200, o.docs["default"].contentType, o.docs["default"].docContent)
+			}
 		},
 		Middleware: o,
 	})
-	
+
 	return ris
 }
 
