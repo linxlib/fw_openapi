@@ -59,6 +59,20 @@ func (oa *OpenAPI) NewParentFieldProp(f *types.Struct, tagName string) map[strin
 
 	return fields
 }
+func getFormat(typeString string) string {
+	switch typeString {
+	case "int64", "uint64":
+		return "int64"
+	case "int32", "uint32", "int":
+		return "int32"
+	case "float64":
+		return "double"
+	case "float32":
+		return "float"
+	default:
+		return ""
+	}
+}
 
 func (oa *OpenAPI) NewFieldProp(f *types.Field,
 	tagName string, defaultValue string, comment string, exampleValue string) *spec.RefOrSpec[spec.Schema] {
@@ -71,6 +85,7 @@ func (oa *OpenAPI) NewFieldProp(f *types.Field,
 
 	if strings.Contains(typeString, "Decimal") {
 		typeString = "number"
+		format = "double"
 		defVal = 0.0
 		exampleVal = 0.0
 	} else {
@@ -80,8 +95,8 @@ func (oa *OpenAPI) NewFieldProp(f *types.Field,
 			defVal = defaultValue
 			exampleVal = exampleValue
 		case "int", "int64", "uint", "uint64", "uint32", "int32":
+			format = getFormat(typeString)
 			typeString = "integer"
-			format = typeString
 			if defaultValue == "" {
 				defVal = 0
 			} else {
@@ -105,6 +120,7 @@ func (oa *OpenAPI) NewFieldProp(f *types.Field,
 				exampleVal = conv.Bool(exampleValue)
 			}
 		case "float32", "float64":
+			format = getFormat(typeString)
 			typeString = "number"
 			if defaultValue == "" {
 				defVal = 0.00
@@ -117,14 +133,38 @@ func (oa *OpenAPI) NewFieldProp(f *types.Field,
 				exampleVal = conv.Float64(exampleValue)
 			}
 		case "Time":
-			typeString = "string"
-			format = "date-time"
-			if defaultValue == "" {
-				defVal = time.Now().Format("2006-01-02 15:04:05")
+			if v, ok := f.GetTag().Lookup("time_format"); ok {
+				switch v {
+				case "unix":
+					typeString = "integer"
+					format = "int64"
+					if defaultValue == "" {
+						defVal = time.Now().Unix()
+					}
+					if exampleValue == "" {
+						exampleVal = time.Now().Unix()
+					}
+				case "unixnano":
+					typeString = "integer"
+					format = "int64"
+					if defaultValue == "" {
+						defVal = time.Now().UnixNano()
+					}
+					if exampleValue == "" {
+						exampleVal = time.Now().UnixNano()
+					}
+				}
+			} else {
+				typeString = "string"
+				format = "date-time"
+				if defaultValue == "" {
+					defVal = time.Now().Format("2006-01-02 15:04:05")
+				}
+				if exampleValue == "" {
+					exampleVal = time.Now().Format("2006-01-02 15:04:05")
+				}
 			}
-			if exampleValue == "" {
-				exampleVal = time.Now().Format("2006-01-02 15:04:05")
-			}
+
 		case "FileHeader":
 			typeString = "string"
 			isBinary = true
@@ -169,7 +209,7 @@ func (oa *OpenAPI) NewFieldProp(f *types.Field,
 
 			return schema
 		} else {
-			builder.Type(typeString).GoType(typeString).Description(comment)
+			builder.Type(typeString).Format(format).Description(comment)
 			if defVal != "" {
 				builder.Default(defVal)
 			}
